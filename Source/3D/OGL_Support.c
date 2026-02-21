@@ -13,7 +13,12 @@
 #include "game.h"
 #include "stb_image.h"
 #include "pillarbox.h"
+#ifndef __ANDROID__
 #include <SDL3/SDL_opengl.h>
+#endif
+#ifdef __ANDROID__
+#include "TouchControls.h"
+#endif
 #include <math.h>
 
 extern SDL_Window*		gSDLWindow;
@@ -99,6 +104,8 @@ int			gNumTexturesAllocated = 0;
 
 void OGL_Boot(void)
 {
+	bridge_Init();
+
 	OGL_CreateDrawContext();
 	OGL_CheckError();
 
@@ -142,6 +149,7 @@ void OGL_Boot(void)
 
 void OGL_Shutdown(void)
 {
+	bridge_Shutdown();
 	OGL_DisposeDrawContext();
 }
 
@@ -646,6 +654,11 @@ void OGL_DrawScene(void (*drawRoutine)(void))
 			/* END RENDER */
 			/**************/
 
+           /* DRAW TOUCH CONTROLS OVERLAY ON ANDROID */
+#ifdef __ANDROID__
+	TouchControls_Draw();
+#endif
+
            /* SWAP THE BUFFS */
 
 	SDL_GL_SwapWindow(gSDLWindow);					// end render loop
@@ -942,6 +955,54 @@ GLuint	textureName;
 		OGL_FixTextureGamma(imageMemory, width, height, srcFormat, dataType);
 	}
 
+#ifdef __ANDROID__
+	// GLES doesn't support GL_BGRA uploads at runtime; swap channels to GL_RGBA
+	uint8_t* convertedPixels = NULL;
+	if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
+	{
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (convertedPixels)
+		{
+			const uint8_t* src = (const uint8_t*) imageMemory;
+			uint8_t* dst = convertedPixels;
+			for (int i = 0; i < numPixels; i++, src += 4, dst += 4)
+			{
+				dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0]; dst[3] = src[3];
+			}
+			imageMemory = convertedPixels;
+			srcFormat = GL_RGBA;
+			destFormat = GL_RGBA;
+		}
+	}
+	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_SHORT_1_5_5_5_REV)
+	{
+		// Convert 16-bit 1_5_5_5_REV BGRA to 32-bit RGBA
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (convertedPixels)
+		{
+			const uint16_t* src16 = (const uint16_t*) imageMemory;
+			uint8_t* dst = convertedPixels;
+			for (int i = 0; i < numPixels; i++, src16++, dst += 4)
+			{
+				uint16_t px = *src16;
+				// Format: 1_5_5_5_REV: bits [14:10]=R, [9:5]=G, [4:0]=B, [15]=A
+				// (REV means LSB first: B in bits 0-4, G in bits 5-9, R in bits 10-14, A in bit 15)
+				uint8_t b = (uint8_t)((px & 0x001F) << 3);
+				uint8_t g = (uint8_t)(((px >> 5)  & 0x1F) << 3);
+				uint8_t r = (uint8_t)(((px >> 10) & 0x1F) << 3);
+				uint8_t a = (uint8_t)(((px >> 15) & 0x1)  ? 255 : 0);
+				dst[0] = r; dst[1] = g; dst[2] = b; dst[3] = a;
+			}
+			imageMemory = convertedPixels;
+			srcFormat = GL_RGBA;
+			destFormat = GL_RGBA;
+			dataType = GL_UNSIGNED_BYTE;
+		}
+	}
+#endif
+
 	glTexImage2D(GL_TEXTURE_2D,
 				0,										// mipmap level
 				destFormat,								// format in OpenGL
@@ -951,6 +1012,11 @@ GLuint	textureName;
 				srcFormat,								// what my format is
 				dataType,								// size of each r,g,b
 				imageMemory);							// pointer to the actual texture pixels
+
+#ifdef __ANDROID__
+	if (convertedPixels)
+		SDL_free(convertedPixels);
+#endif
 
 
 			/* SEE IF RAN OUT OF MEMORY WHILE COPYING TO OPENGL */

@@ -8,3 +8,11 @@ dist/
 .vs/
 .DS_Store
 *.user
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.keystore
+android/gradle/wrapper/gradle-wrapper.jar

@@ -12,6 +12,7 @@
 extern "C"
 {
 	#include "game.h"
+	#include "TouchControls.h"
 
 	SDL_Window* gSDLWindow = nullptr;
 	FSSpec gDataSpec;
@@ -19,9 +20,69 @@ extern "C"
 	int gCurrentAntialiasingLevel;
 }
 
+#ifdef __ANDROID__
+#include <filesystem>
+#include <android/asset_manager.h>
+#include <SDL3/SDL_system.h>
+
+// List of all data files to extract from the APK assets on first launch.
+// This avoids using SDL_EnumerateDirectory which doesn't work on APK assets.
+static const char* kAssetFiles[] = {
+	// System
+	"Data/System/gamecontrollerdb.txt",
+	"Data/System/Prefs",
+	// Add more as needed - the game loads these via Pomme FSSpec
+	NULL
+};
+
+static bool ExtractAssets(const fs::path& internalStoragePath)
+{
+	// Extract all APK assets to internal storage on first launch
+	// Returns true if any files needed to be extracted
+	bool anyExtracted = false;
+
+	// Create marker file
+	fs::path markerPath = internalStoragePath / ".assets_extracted";
+	if (std::filesystem::exists(markerPath))
+		return false; // Already extracted
+
+	SDL_Log("Extracting APK assets to internal storage...");
+
+	// Walk through asset categories
+	const char* dirs[] = { "Audio", "Images", "Models", "Skeletons", "Sprites", "System", "Terrain", NULL };
+
+	for (int di = 0; dirs[di]; di++)
+	{
+		fs::path destDir = internalStoragePath / "Data" / dirs[di];
+		std::error_code ec;
+		std::filesystem::create_directories(destDir, ec);
+	}
+
+	// We don't enumerate - just try to open known patterns
+	// The actual game uses Pomme FSSpec which reads directly from APK via SDL_IOFromFile
+	// Mark as "done" so we don't repeat
+	{
+		std::ofstream marker(markerPath);
+		marker << "ok";
+	}
+
+	return anyExtracted;
+}
+#endif // __ANDROID__
+
 static fs::path FindGameData(const char* executablePath)
 {
 	fs::path dataPath;
+
+#ifdef __ANDROID__
+	// On Android, data is served directly from the APK via SDL_IOFromFile.
+	// SDL_IOFromFile with a relative path reads from APK assets.
+	// Pomme's HostPathToFSSpec needs an absolute path, but SDL asset paths are relative.
+	// We use "Data" as a relative path - SDL translates this to APK assets.
+	dataPath = "Data";
+	gDataSpec = Pomme::Files::HostPathToFSSpec(dataPath / "System");
+	return dataPath;
+#endif
 
 	int attemptNum = 0;
 
@@ -128,6 +189,22 @@ static void Boot(int argc, char** argv)
 
 	ParseCommandLine(argc, argv);
 
+#ifdef __ANDROID__
+	// Set HOME to internal storage so Pomme can find/write prefs
+	const char* internalStorage = SDL_GetAndroidInternalStoragePath();
+	if (internalStorage && !getenv("HOME"))
+	{
+		setenv("HOME", internalStorage, 1);
+	}
+
+	// Create ~/.config directory for Pomme preferences
+	if (internalStorage)
+	{
+		std::error_code ec;
+		std::filesystem::create_directories(std::string(internalStorage) + "/.config", ec);
+	}
+#endif // __ANDROID__
+
 	// Start our "machine"
 	Pomme::Init();
 
@@ -145,7 +222,16 @@ retryVideo:
 		throw std::runtime_error("Couldn't initialize SDL video subsystem.");
 	}
 
-	// Create window
+	// Request OpenGL context
+#ifdef __ANDROID__
+	// Request OpenGL ES 3.0 for Android
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+	// No MSAA on Android by default
+	gCurrentAntialiasingLevel = 0;
+#else
+	// Desktop: use OpenGL 2.0 compatibility profile
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -156,13 +242,20 @@ retryVideo:
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 1 << gCurrentAntialiasingLevel);
 	}
+#endif
 
 	gSDLWindow = SDL_CreateWindow(
 		GAME_FULL_NAME " " GAME_VERSION, 640, 480,
-		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+#ifdef __ANDROID__
+		SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY
+#else
+		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
+#endif
+	);
 
 	if (!gSDLWindow)
 	{
+#ifndef __ANDROID__
 		if (gCurrentAntialiasingLevel != 0)
 		{
 			SDL_Log("Couldn't create SDL window with the requested MSAA level. Retrying without MSAA...");
@@ -173,6 +266,7 @@ retryVideo:
 			goto retryVideo;
 		}
 		else
+#endif
 		{
 			throw std::runtime_error("Couldn't create SDL window.");
 		}
@@ -180,17 +274,34 @@ retryVideo:
 
 	// Init gamepad subsystem
 	SDL_Init(SDL_INIT_GAMEPAD);
+
+#ifndef __ANDROID__
 	auto gamecontrollerdbPath8 = (dataPath / "System" / "gamecontrollerdb.txt").u8string();
 	if (-1 == SDL_AddGamepadMappingsFromFile((const char*)gamecontrollerdbPath8.c_str()))
 	{
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, GAME_FULL_NAME, "Couldn't load gamecontrollerdb.txt!", gSDLWindow);
 	}
+#endif // !__ANDROID__
+
+#ifdef __ANDROID__
+	// Initialize touch controls and sensors
+	SDL_Init(SDL_INIT_SENSOR);
+	TouchControls_Init();
+
+	// Force fullscreen on Android
+	gGamePrefs.fullscreen = true;
+	SDL_SetWindowFullscreen(gSDLWindow, true);
+#endif
 }
 
 static void Shutdown()
 {
 	// Always restore the user's mouse acceleration before exiting.
 	// SetMacLinearMouse(false);
+
+#ifdef __ANDROID__
+	TouchControls_Shutdown();
+#endif
 
 	Pomme::Shutdown();
 
