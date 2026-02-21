@@ -99,6 +99,10 @@ static struct
     // Screen size (updated each frame)
     int         screenW, screenH;
 
+    // Gyro steering recalculation
+    float       gyroBias;       // recenter bias
+    float       filteredRate;   // low-pass filtered gyro rate
+
     // Gyro button
     float       gyroRecenterCX, gyroRecenterCY, gyroRecenterR;
     int         gyroRecenterFinger;
@@ -111,9 +115,6 @@ static struct
 // ============================================================
 // HELPERS
 // ============================================================
-
-static float ScreenToNormX(float sx) { return sx / (float)gTC.screenW; }
-static float ScreenToNormY(float sy) { return sy / (float)gTC.screenH; }
 
 static float Dist2D(float ax, float ay, float bx, float by) {
     float dx = ax - bx, dy = ay - by;
@@ -400,24 +401,12 @@ void TouchControls_EndFrame(void)
         float data[3];
         if (SDL_GetSensorData(gTC.gyroSensor, data, 3))
         {
-            // data[2] is rotation around Z axis (yaw) in radians/second
-            // We integrate this over time to get a tilt angle
-            // For a racing game on a mobile held landscape, we want to tilt the phone
-            // to steer. The gyro gives us angular velocity; we integrate over time.
-            // However, the accelerometer is better for this. Let's use roll from accel.
-            // Actually SDL_SENSOR_ACCEL gives us acceleration, not gyro.
-            // We use gyro angular velocity (data[1] = pitch, around X axis = roll while landscape)
-            // Integrate: steering += data[1] * dt (but this drifts)
-            // Better: use a proportional approach where pitch rate drives steering
-            static float gyroBias = 0.0f;
-            static float filteredRate = 0.0f;
+            // Use gyro angular velocity (data[1] = pitch around X axis = roll while in landscape)
+            // Apply low-pass filter to remove noise, then scale to steering value.
+            gTC.filteredRate = gTC.filteredRate * 0.8f + data[1] * 0.2f;
 
-            // Low-pass filter to remove noise
-            filteredRate = filteredRate * 0.8f + data[1] * 0.2f;
-
-            // Scale to steering value
-            float rate = filteredRate - gyroBias - gTC.gyroOffset;
-            float steering = rate * 0.3f; // scale factor
+            float rate = gTC.filteredRate - gTC.gyroBias - gTC.gyroOffset;
+            float steering = rate * 0.3f;
             steering = fmaxf(-1.0f, fminf(1.0f, steering));
             gTC.gyroValue = steering;
         }
@@ -500,10 +489,15 @@ SteeringMode TouchControls_GetSteeringMode(void)
 // DRAWING
 // ============================================================
 
+// Max segments for circle drawing
+#define MAX_CIRCLE_SEGMENTS 64
+
 // Draw a filled circle using triangle fan
 static void DrawCircleFilled(float cx, float cy, float r, int segments)
 {
-    float verts[2 + (segments + 1) * 2];
+    if (segments > MAX_CIRCLE_SEGMENTS) segments = MAX_CIRCLE_SEGMENTS;
+    // triangle fan: center + (segments+1) rim points, 2 floats each
+    float verts[2 + (MAX_CIRCLE_SEGMENTS + 1) * 2];
     int vi = 0;
     verts[vi++] = cx; verts[vi++] = cy;
     for (int i = 0; i <= segments; i++)
@@ -528,7 +522,8 @@ static void DrawCircleFilled(float cx, float cy, float r, int segments)
 // Draw a circle outline
 static void DrawCircleOutline(float cx, float cy, float r, int segments)
 {
-    float verts[segments * 2];
+    if (segments > MAX_CIRCLE_SEGMENTS) segments = MAX_CIRCLE_SEGMENTS;
+    float verts[MAX_CIRCLE_SEGMENTS * 2];
     for (int i = 0; i < segments; i++)
     {
         float a = (float)i / (float)segments * 2.0f * 3.14159265f;

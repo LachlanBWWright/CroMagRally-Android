@@ -22,6 +22,7 @@ extern "C"
 
 #ifdef __ANDROID__
 #include <filesystem>
+#include <fstream>
 #include <android/asset_manager.h>
 #include <SDL3/SDL_system.h>
 
@@ -43,7 +44,7 @@ static bool ExtractAssets(const fs::path& internalStoragePath)
 
 	// Create marker file
 	fs::path markerPath = internalStoragePath / ".assets_extracted";
-	if (std::filesystem::exists(markerPath))
+	if (fs::exists(markerPath))
 		return false; // Already extracted
 
 	SDL_Log("Extracting APK assets to internal storage...");

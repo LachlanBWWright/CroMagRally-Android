@@ -104,10 +104,10 @@ int			gNumTexturesAllocated = 0;
 
 void OGL_Boot(void)
 {
-	bridge_Init();
-
 	OGL_CreateDrawContext();
 	OGL_CheckError();
+
+	bridge_Init();  // Must be called AFTER GL context creation
 
 	OGL_InitDrawContext();
 	OGL_CheckError();

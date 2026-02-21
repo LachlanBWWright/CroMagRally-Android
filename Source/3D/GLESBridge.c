@@ -8,7 +8,6 @@
 #include <android/log.h>
 #include <string.h>
 #include <stdlib.h>
-#include <alloca.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -119,7 +118,11 @@ static void mat4_frustum(Mat4 m, double l, double r, double b, double t, double 
     m[14] = (float)(-2.0*f*n/(f-n));
 }
 
-// Get the normal matrix (inverse transpose of upper-left 3x3 of modelview)
+// Get the normal matrix (inverse transpose of upper-left 3x3 of modelview).
+// LIMITATION: This implementation uses only column-normalization, which is
+// correct for rotations and uniform scaling but may produce incorrect
+// normals under non-uniform scaling. For the game's typical transformations
+// (rotation + uniform scale) this is sufficient.
 static void mat4_normal_matrix(const Mat4 mv, float nm[9]) {
     // For orthogonal matrices, the normal matrix equals the upper-left 3x3 of the modelview
     // For the general case, we'd need to compute the inverse transpose
@@ -376,6 +379,7 @@ static struct {
     GLenum      immMode;
     bool        inImmMode;
     ImmVertex   immVerts[MAX_IMM_VERTS];
+    uint16_t    convertedIndices[MAX_IMM_INDICES]; // for GL_QUADS / mode conversion
     int         immVertCount;
 
     // VBOs
@@ -955,8 +959,8 @@ void bridge_Vertex3fv(const GLfloat* v) {
 static void FlushImmMode(void) {
     if (gBridge.immVertCount == 0) return;
 
-    // Build index buffer based on primitive type
-    uint16_t indices[MAX_IMM_INDICES];
+    // Build index buffer based on primitive type (reuse global convertedIndices buffer)
+    uint16_t* indices = gBridge.convertedIndices;
     int indexCount = 0;
     int n = gBridge.immVertCount;
     GLenum renderMode = gBridge.immMode;
@@ -1172,14 +1176,13 @@ static void DrawVertexArrays(GLenum mode, int count, GLenum indexType, const voi
     }
 
     // Handle primitive conversion for unsupported types
-    uint16_t convertedIndices[MAX_IMM_INDICES];
     GLenum renderMode = mode;
     const void* finalIndices = indices;
     int finalIndexCount = indexCount;
 
     if (mode == 0x0007 || mode == 0x0008 || mode == 0x0009) { // QUADS, QUAD_STRIP, POLYGON
         renderMode = GL_TRIANGLES;
-        finalIndices = convertedIndices;
+        finalIndices = gBridge.convertedIndices;
         finalIndexCount = 0;
 
         if (mode == 0x0007) { // GL_QUADS
@@ -1200,12 +1203,12 @@ static void DrawVertexArrays(GLenum mode, int count, GLenum indexType, const voi
                     const uint8_t* idx8 = (const uint8_t*)indices;
                     i0 = idx8[b+0]; i1 = idx8[b+1]; i2 = idx8[b+2]; i3 = idx8[b+3];
                 }
-                convertedIndices[finalIndexCount++] = (uint16_t)i0;
-                convertedIndices[finalIndexCount++] = (uint16_t)i1;
-                convertedIndices[finalIndexCount++] = (uint16_t)i2;
-                convertedIndices[finalIndexCount++] = (uint16_t)i0;
-                convertedIndices[finalIndexCount++] = (uint16_t)i2;
-                convertedIndices[finalIndexCount++] = (uint16_t)i3;
+                gBridge.convertedIndices[finalIndexCount++] = (uint16_t)i0;
+                gBridge.convertedIndices[finalIndexCount++] = (uint16_t)i1;
+                gBridge.convertedIndices[finalIndexCount++] = (uint16_t)i2;
+                gBridge.convertedIndices[finalIndexCount++] = (uint16_t)i0;
+                gBridge.convertedIndices[finalIndexCount++] = (uint16_t)i2;
+                gBridge.convertedIndices[finalIndexCount++] = (uint16_t)i3;
             }
         }
     }
@@ -1254,18 +1257,22 @@ void bridge_DrawElements(GLenum mode, GLsizei count, GLenum type, const void* in
     }
 
     // Convert non-uint16 index types to uint16 before drawing
-    // (GLES 3.0 supports GL_UNSIGNED_INT natively so we can pass uint32 directly,
-    //  but our bridge packs to a uint16 IBO so we must convert here.)
+    // (Our bridge packs vertices to a uint16 IBO so we must convert here.)
     if (type == GL_UNSIGNED_INT && count > 0) {
-        uint16_t* idx16 = (uint16_t*) alloca(count * sizeof(uint16_t));
+        // Use heap allocation for safety with large index counts
+        uint16_t* idx16 = (uint16_t*) malloc(count * sizeof(uint16_t));
+        if (!idx16) { BRIDGE_ERR("OOM converting uint32 indices"); return; }
         const uint32_t* idx32 = (const uint32_t*)indices;
         for (int i = 0; i < count; i++) idx16[i] = (uint16_t)idx32[i];
         DrawVertexArrays(mode, maxIndex + 1, GL_UNSIGNED_SHORT, idx16, count);
+        free(idx16);
     } else if (type == GL_UNSIGNED_BYTE && count > 0) {
-        uint16_t* idx16 = (uint16_t*) alloca(count * sizeof(uint16_t));
+        uint16_t* idx16 = (uint16_t*) malloc(count * sizeof(uint16_t));
+        if (!idx16) { BRIDGE_ERR("OOM converting uint8 indices"); return; }
         const uint8_t* idx8 = (const uint8_t*)indices;
         for (int i = 0; i < count; i++) idx16[i] = (uint16_t)idx8[i];
         DrawVertexArrays(mode, maxIndex + 1, GL_UNSIGNED_SHORT, idx16, count);
+        free(idx16);
     } else {
         DrawVertexArrays(mode, maxIndex + 1, type, indices, count);
     }
