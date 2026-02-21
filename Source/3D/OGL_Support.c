@@ -1001,6 +1001,23 @@ GLuint	textureName;
 			dataType = GL_UNSIGNED_BYTE;
 		}
 	}
+
+	// GLES 3.0 Table 8.2: GL_RGB5_A1 / GL_RGBA4 only support packed types, not GL_UNSIGNED_BYTE.
+	// Uploading GL_UNSIGNED_BYTE data with these internal formats generates GL_INVALID_OPERATION.
+	// Fall back to GL_RGBA for full 8-bit channels.
+	if (dataType == GL_UNSIGNED_BYTE && (destFormat == GL_RGB5_A1 || destFormat == GL_RGBA4))
+	{
+		destFormat = GL_RGBA;
+	}
+
+	// GLES 3.0: for unsized internal formats, internalformat must equal format.
+	// e.g. internalformat=GL_RGB with format=GL_RGBA generates GL_INVALID_OPERATION.
+	// Align destFormat with srcFormat when they would mismatch.
+	if (dataType == GL_UNSIGNED_BYTE && srcFormat != (GLenum)destFormat &&
+		(destFormat == GL_RGB || destFormat == GL_RGBA))
+	{
+		destFormat = (GLint)srcFormat;
+	}
 #endif
 
 	glTexImage2D(GL_TEXTURE_2D,
