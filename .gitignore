@@ -13,7 +13,12 @@ dist/
 android/.gradle/
 android/build/
 android/app/build/
+android/app/.cxx/
 android/local.properties
 android/*.keystore
 android/gradle/wrapper/gradle-wrapper.jar
+
+# SDL Java bridge files (generated in CI from SDL source)
+android/app/src/main/java/org/libsdl/
+
 _codeql_detected_source_root
