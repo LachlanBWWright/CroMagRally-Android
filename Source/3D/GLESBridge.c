@@ -496,6 +496,10 @@ static void GetUniformLocations(ShaderState* s) {
 static void UploadUniforms(void) {
     ShaderState* s = &gBridge.shader;
 
+    // Guard: if the shader program failed to compile/link, skip all glUniform* calls.
+    // Calling glUniform* without an active program generates GL_INVALID_OPERATION.
+    if (!s->program) return;
+
     // Matrices
     {
         // MVP = proj * mv
@@ -642,6 +646,7 @@ void bridge_Shutdown(void) {
 // ===========================
 
 static void ActivateProgram(void) {
+    if (!gBridge.shader.program) return; // shader failed to compile; skip
     glUseProgram(gBridge.shader.program);
     UploadUniforms();
 }

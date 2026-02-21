@@ -934,6 +934,15 @@ GLuint	textureName;
 
 			/* GET A UNIQUE TEXTURE NAME & INITIALIZE IT */
 
+#ifdef __ANDROID__
+	// Drain any stale GL errors accumulated from previous unchecked calls
+	// (e.g. glTexParameteri calls that have no OGL_CheckError after them).
+	// Async driver pipelines on Android may report these errors late, causing
+	// them to be mis-attributed to glGenTextures here.
+	{ GLenum _e; while ((_e = glGetError()) != GL_NO_ERROR) {
+		SDL_Log("OGL_TextureMap_Load: flushing stale GL error 0x%x before glGenTextures", _e); } }
+#endif
+
 	glGenTextures(1, &textureName);
 	if (OGL_CheckError())
 		DoFatalAlert("OGL_TextureMap_Load: glGenTextures failed!");
@@ -956,8 +965,16 @@ GLuint	textureName;
 	}
 
 #ifdef __ANDROID__
-	// GLES doesn't support GL_BGRA uploads at runtime; swap channels to GL_RGBA
+	// GLES 3.0 texture format compatibility fixes.
+	// Many desktop GL formats are either unavailable or require extensions on GLES 3.0.
+	// Named constants for packed/sized formats not defined in GLES 3.0 headers.
+#	define GLES_UNSIGNED_INT_8_8_8_8_REV  0x8367u  // GL_UNSIGNED_INT_8_8_8_8_REV
+#	define GLES_SRGB8_ALPHA8              0x8C43u  // GL_SRGB8_ALPHA8
+#	define GLES_RGB8                      0x8051u  // GL_RGB8
+#	define GLES_SRGB8                     0x8C41u  // GL_SRGB8
 	uint8_t* convertedPixels = NULL;
+
+	// --- BGRA: not a core GLES 3.0 format; must convert to RGBA ---
 	if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
 	{
 		int numPixels = width * height;
@@ -977,7 +994,7 @@ GLuint	textureName;
 	}
 	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_SHORT_1_5_5_5_REV)
 	{
-		// Convert 16-bit 1_5_5_5_REV BGRA to 32-bit RGBA
+		// Convert 16-bit 1_5_5_5_REV packed BGRA to 32-bit RGBA UNSIGNED_BYTE
 		int numPixels = width * height;
 		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
 		if (convertedPixels)
@@ -987,8 +1004,7 @@ GLuint	textureName;
 			for (int i = 0; i < numPixels; i++, src16++, dst += 4)
 			{
 				uint16_t px = *src16;
-				// Format: 1_5_5_5_REV: bits [14:10]=R, [9:5]=G, [4:0]=B, [15]=A
-				// (REV means LSB first: B in bits 0-4, G in bits 5-9, R in bits 10-14, A in bit 15)
+				// 1_5_5_5_REV: bits [14:10]=R [9:5]=G [4:0]=B [15]=A
 				uint8_t b = (uint8_t)((px & 0x001F) << 3);
 				uint8_t g = (uint8_t)(((px >> 5)  & 0x1F) << 3);
 				uint8_t r = (uint8_t)(((px >> 10) & 0x1F) << 3);
@@ -1001,23 +1017,98 @@ GLuint	textureName;
 			dataType = GL_UNSIGNED_BYTE;
 		}
 	}
+	// --- GL_UNSIGNED_INT_8_8_8_8_REV: 32-bit BGRA packed int, Mac-only, not in GLES 3.0 ---
+	else if (srcFormat == GL_BGRA && dataType == (GLint)GLES_UNSIGNED_INT_8_8_8_8_REV)
+	{
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (convertedPixels)
+		{
+			const uint32_t* src32 = (const uint32_t*) imageMemory;
+			uint8_t* dst = convertedPixels;
+			for (int i = 0; i < numPixels; i++, src32++, dst += 4)
+			{
+				uint32_t px = *src32;
+				dst[0] = (uint8_t)((px >> 24) & 0xFF); // R
+				dst[1] = (uint8_t)((px >> 16) & 0xFF); // G
+				dst[2] = (uint8_t)((px >>  8) & 0xFF); // B
+				dst[3] = (uint8_t)( px        & 0xFF); // A
+			}
+			imageMemory = convertedPixels;
+			srcFormat = GL_RGBA;
+			destFormat = GL_RGBA;
+			dataType = GL_UNSIGNED_BYTE;
+		}
+	}
+	// --- GL_LUMINANCE / GL_LUMINANCE_ALPHA: not valid in core GLES 3.0 ---
+	// Expand luminance (1-channel) to RGBA by replicating across RGB channels.
+	else if ((srcFormat == GL_LUMINANCE || srcFormat == GL_LUMINANCE_ALPHA)
+			 && dataType == GL_UNSIGNED_BYTE)
+	{
+		int channels = (srcFormat == GL_LUMINANCE) ? 1 : 2;
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (convertedPixels)
+		{
+			const uint8_t* src = (const uint8_t*) imageMemory;
+			uint8_t* dst = convertedPixels;
+			for (int i = 0; i < numPixels; i++, src += channels, dst += 4)
+			{
+				uint8_t l = src[0];
+				uint8_t a = (channels == 2) ? src[1] : 255;
+				dst[0] = l; dst[1] = l; dst[2] = l; dst[3] = a;
+			}
+			imageMemory = convertedPixels;
+			srcFormat = GL_RGBA;
+			destFormat = GL_RGBA;
+			dataType = GL_UNSIGNED_BYTE;
+		}
+	}
 
-	// GLES 3.0 Table 8.2: GL_RGB5_A1 / GL_RGBA4 only support packed types, not GL_UNSIGNED_BYTE.
-	// Uploading GL_UNSIGNED_BYTE data with these internal formats generates GL_INVALID_OPERATION.
-	// Fall back to GL_RGBA for full 8-bit channels.
+	// --- GLES 3.0 Table 8.2: GL_RGB5_A1 / GL_RGBA4 with GL_UNSIGNED_BYTE is allowed
+	//     by the spec but some drivers reject it; fall back to GL_RGBA ---
 	if (dataType == GL_UNSIGNED_BYTE && (destFormat == GL_RGB5_A1 || destFormat == GL_RGBA4))
 	{
 		destFormat = GL_RGBA;
 	}
 
-	// GLES 3.0: for unsized internal formats, internalformat must equal format.
-	// e.g. internalformat=GL_RGB with format=GL_RGBA generates GL_INVALID_OPERATION.
-	// Align destFormat with srcFormat when they would mismatch.
+	// --- GLES 3.0: for unsized internal formats, internalformat must equal the base format.
+	//     e.g. internalformat=GL_RGB with format=GL_RGBA → GL_INVALID_OPERATION.
+	//     Align destFormat with srcFormat when there is a mismatch.
 	if (dataType == GL_UNSIGNED_BYTE && srcFormat != (GLenum)destFormat &&
 		(destFormat == GL_RGB || destFormat == GL_RGBA))
 	{
 		destFormat = (GLint)srcFormat;
 	}
+
+	// --- Sized internal formats are not valid as the external *format* parameter.
+	//     If srcFormat (the external format) is a sized format, map it to its base format.
+	if (srcFormat == GL_RGBA8 || srcFormat == (GLint)GLES_SRGB8_ALPHA8)
+	{
+		srcFormat = GL_RGBA;
+	}
+	else if (srcFormat == (GLint)GLES_RGB8 || srcFormat == (GLint)GLES_SRGB8)
+	{
+		srcFormat = GL_RGB;
+	}
+
+	// --- Final safety: any unrecognized srcFormat will cause GL_INVALID_ENUM from glTexImage2D;
+	//     log it and fall back to GL_RGBA so the app keeps running.
+	//     The complete set of GLES 3.0 base formats accepted by glTexImage2D is:
+	//     GL_RED, GL_RG, GL_RGB, GL_RGBA, GL_DEPTH_COMPONENT, GL_DEPTH_STENCIL.
+	//     Anything else is either GLES 2.0-only or desktop-only and must be converted above.
+	if (srcFormat != GL_RGBA && srcFormat != GL_RGB && srcFormat != GL_RED &&
+		srcFormat != GL_RG && srcFormat != GL_DEPTH_COMPONENT && srcFormat != GL_DEPTH_STENCIL)
+	{
+		SDL_Log("OGL_TextureMap_Load: unrecognized GLES3 srcFormat 0x%x (destFormat 0x%x dataType 0x%x) -- falling back to GL_RGBA",
+				(unsigned)srcFormat, (unsigned)destFormat, (unsigned)dataType);
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+	}
+#	undef GLES_UNSIGNED_INT_8_8_8_8_REV
+#	undef GLES_SRGB8_ALPHA8
+#	undef GLES_RGB8
+#	undef GLES_SRGB8
 #endif
 
 	glTexImage2D(GL_TEXTURE_2D,
@@ -1039,7 +1130,8 @@ GLuint	textureName;
 			/* SEE IF RAN OUT OF MEMORY WHILE COPYING TO OPENGL */
 
 	if (OGL_CheckError())
-		DoFatalAlert("OGL_TextureMap_Load: glTexImage2D failed!");
+		DoFatalAlert("OGL_TextureMap_Load: glTexImage2D failed! (internalFmt=0x%x srcFmt=0x%x type=0x%x size=%dx%d)",
+					 (unsigned)destFormat, (unsigned)srcFormat, (unsigned)dataType, width, height);
 
 
 				/* SET THIS TEXTURE AS CURRENTLY ACTIVE FOR DRAWING */
