@@ -175,7 +175,8 @@ void bridge_DrawElements(GLenum mode, GLsizei count, GLenum type, const void *in
 void bridge_DrawArrays(GLenum mode, GLint first, GLsizei count);
 
 // Color4fv alias (needed for state stack restore)
-void bridge_Color4fv_current(const GLfloat *v);
+// Blend function (tracked for GL_BLEND_SRC/DST queries via GetIntegerv)
+void bridge_BlendFunc(GLenum sfactor, GLenum dfactor);
 
 // Hint (no-op stub)
 static inline void bridge_Hint(GLenum target, GLenum mode) { (void)target; (void)mode; }
@@ -260,6 +261,9 @@ static inline void bridge_ColorMaterial(GLenum face, GLenum mode) { (void)face; 
 // Misc stubs
 #define glHint                  bridge_Hint
 #define glPolygonMode           bridge_PolygonMode
+
+// Blend function tracking
+#define glBlendFunc             bridge_BlendFunc
 
 #else  // !__ANDROID__
 

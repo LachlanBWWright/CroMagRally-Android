@@ -23,6 +23,7 @@ extern "C"
 #ifdef __ANDROID__
 #include <filesystem>
 #include <fstream>
+#include <system_error>
 #include <android/asset_manager.h>
 #include <SDL3/SDL_system.h>
 

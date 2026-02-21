@@ -186,7 +186,27 @@ elseif(NOT MSVC AND ANDROID)
 		-Wno-unknown-pragmas
 		-Wno-unused-parameter
 	)
-else() # MSVC
+elseif(MSVC) # Windows/MSVC
+
+	target_compile_definitions(${GAME_TARGET} PRIVATE
+		WIN32_LEAN_AND_MEAN
+		NOGDI				# don't clash with Mac function names
+		NOUSER				# don't clash with Mac function names
+	)
+
+	target_compile_options(${GAME_TARGET} PRIVATE
+		/EHs	# synchronous exceptions; also, extern "C" functions may throw exceptions
+		/W4
+		/wd4068 # ignore unrecognized pragmas
+		/wd4100 # unreferenced formal parameters
+		/wd4200 # nonstandard extension (zero-sized array in struct/union)
+		/wd4201 # nonstandard extension (nameless struct)
+		/wd4244 # conversion from double to float
+		/wd4305 # truncation from double to float
+		/wd5105 # see https://developercommunity.visualstudio.com/t/1249671
+		/MP		# multiprocessor build
+		/Zi		# output info to PDB
+	)
 
 	# Let executable be debugged with PDB, even in Release builds
 	target_link_options(${GAME_TARGET} PRIVATE /DEBUG)

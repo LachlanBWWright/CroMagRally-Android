@@ -147,11 +147,11 @@ static const char* kVertexShaderSrc =
 "#version 300 es\n"
 "precision highp float;\n"
 "\n"
-"// Attributes\n"
-"in vec3 a_position;\n"
-"in vec3 a_normal;\n"
-"in vec2 a_texcoord;\n"
-"in vec4 a_color;\n"
+"// Attributes with explicit locations\n"
+"layout(location = 0) in vec3 a_position;\n"
+"layout(location = 1) in vec3 a_normal;\n"
+"layout(location = 2) in vec2 a_texcoord;\n"
+"layout(location = 3) in vec4 a_color;\n"
 "\n"
 "// Uniforms - matrices\n"
 "uniform mat4 u_mvMatrix;\n"
@@ -366,6 +366,10 @@ static struct {
     bool        alphaTestEnabled;
     int         alphaFunc;
     float       alphaRef;
+
+    // Blend state (tracked because GL_BLEND_SRC/DST are desktop-only enums)
+    GLenum      blendSrc;       // default GL_SRC_ALPHA
+    GLenum      blendDst;       // default GL_ONE_MINUS_SRC_ALPHA
 
     // Normalize (no-op in GLES, handled by normalMatrix)
     bool        normalizeEnabled;
@@ -584,6 +588,10 @@ void bridge_Init(void) {
     gBridge.alphaFunc = 0x0205; // GL_NOTEQUAL
     gBridge.alphaRef = 0.0f;
 
+    // Default blend
+    gBridge.blendSrc = GL_SRC_ALPHA;
+    gBridge.blendDst = GL_ONE_MINUS_SRC_ALPHA;
+
     // Default texture env
     gBridge.texEnvMode = 0; // MODULATE
 
@@ -772,9 +780,15 @@ void bridge_GetFloatv(GLenum pname, GLfloat* params) {
 }
 
 void bridge_GetIntegerv(GLenum pname, GLint* params) {
-    if (pname == 0x0BE1) { *params = GL_SRC_ALPHA;           return; } // GL_BLEND_SRC
-    if (pname == 0x0BE0) { *params = GL_ONE_MINUS_SRC_ALPHA; return; } // GL_BLEND_DST
+    if (pname == 0x0BE1) { *params = (GLint)gBridge.blendSrc; return; } // GL_BLEND_SRC
+    if (pname == 0x0BE0) { *params = (GLint)gBridge.blendDst; return; } // GL_BLEND_DST
     glGetIntegerv(pname, params);
+}
+
+void bridge_BlendFunc(GLenum sfactor, GLenum dfactor) {
+    gBridge.blendSrc = sfactor;
+    gBridge.blendDst = dfactor;
+    glBlendFunc(sfactor, dfactor);
 }
 
 void bridge_GetBooleanv(GLenum pname, GLboolean* params) {
@@ -911,10 +925,6 @@ void bridge_Color4f(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
 }
 
 void bridge_Color4fv(const GLfloat* v) {
-    memcpy(gBridge.currentColor, v, 4*sizeof(float));
-}
-
-void bridge_Color4fv_current(const GLfloat* v) {
     memcpy(gBridge.currentColor, v, 4*sizeof(float));
 }
 
