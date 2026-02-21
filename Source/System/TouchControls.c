@@ -492,10 +492,14 @@ SteeringMode TouchControls_GetSteeringMode(void)
 // Max segments for circle drawing
 #define MAX_CIRCLE_SEGMENTS 64
 
-// Draw a filled circle using triangle fan
+// Draw a filled circle using triangle fan (aspect-ratio corrected)
 static void DrawCircleFilled(float cx, float cy, float r, int segments)
 {
     if (segments > MAX_CIRCLE_SEGMENTS) segments = MAX_CIRCLE_SEGMENTS;
+    // Correct for aspect ratio: in [0..1] screen space, y covers a taller portion
+    // of the screen than x in landscape mode. To get circular dots in pixels:
+    // ry = rx * (screenW / screenH)
+    float ry = (gTC.screenH > 0) ? r * (float)gTC.screenW / (float)gTC.screenH : r;
     // triangle fan: center + (segments+1) rim points, 2 floats each
     float verts[2 + (MAX_CIRCLE_SEGMENTS + 1) * 2];
     int vi = 0;
@@ -504,7 +508,7 @@ static void DrawCircleFilled(float cx, float cy, float r, int segments)
     {
         float a = (float)i / (float)segments * 2.0f * 3.14159265f;
         verts[vi++] = cx + cosf(a) * r;
-        verts[vi++] = cy + sinf(a) * r;
+        verts[vi++] = cy + sinf(a) * ry;
     }
 
     glEnableVertexAttribArray(0);
@@ -519,16 +523,17 @@ static void DrawCircleFilled(float cx, float cy, float r, int segments)
     glDeleteBuffers(1, &vbo);
 }
 
-// Draw a circle outline
+// Draw a circle outline (aspect-ratio corrected)
 static void DrawCircleOutline(float cx, float cy, float r, int segments)
 {
     if (segments > MAX_CIRCLE_SEGMENTS) segments = MAX_CIRCLE_SEGMENTS;
+    float ry = (gTC.screenH > 0) ? r * (float)gTC.screenW / (float)gTC.screenH : r;
     float verts[MAX_CIRCLE_SEGMENTS * 2];
     for (int i = 0; i < segments; i++)
     {
         float a = (float)i / (float)segments * 2.0f * 3.14159265f;
         verts[i*2+0] = cx + cosf(a) * r;
-        verts[i*2+1] = cy + sinf(a) * r;
+        verts[i*2+1] = cy + sinf(a) * ry;
     }
 
     GLuint vbo;
@@ -620,6 +625,9 @@ void TouchControls_Draw(void)
 
     // Save GL state
     GLint savedProgram;
+    GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
+    GLboolean depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean cullFaceWasEnabled = glIsEnabled(GL_CULL_FACE);
     glGetIntegerv(GL_CURRENT_PROGRAM, &savedProgram);
 
     glUseProgram(gTC_Program);
@@ -636,10 +644,11 @@ void TouchControls_Draw(void)
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
-    float ar = (float)gTC.screenW / (float)gTC.screenH;
-    // Adjust radius for aspect ratio
+    float ar = (gTC.screenH > 0) ? (float)gTC.screenW / (float)gTC.screenH : 1.0f;
+    // rx = horizontal joystick radius in [0..1] coords
+    // The vertical radius for aspect-correct hit-testing is rx*ar (same physical size)
     float rx = JOYSTICK_RADIUS;
-    float ry = JOYSTICK_RADIUS * ar;
+    float ry_hit = JOYSTICK_RADIUS * ar; // vertical hit radius (for aspect-correct movement)
 
     // ---- Draw joystick (always visible) ----
     float jcx = gTC.joyActive ? gTC.joyCX : JOYSTICK_CENTER_X;
@@ -657,7 +666,7 @@ void TouchControls_Draw(void)
     if (gTC.steeringMode == kSteeringMode_Joystick)
     {
         float tx = jcx + gTC.joyDX * rx;
-        float ty = jcy + gTC.joyDY * ry;
+        float ty = jcy + gTC.joyDY * ry_hit;
         TC_SetColor(0.5f, 0.7f, 1.0f, 0.5f);
         DrawCircleFilled(tx, ty, rx * 0.4f, 16);
         TC_SetColor(0.8f, 0.9f, 1.0f, 0.6f);
@@ -698,8 +707,11 @@ void TouchControls_Draw(void)
     // Restore state
     glBindVertexArray(0);
     glDeleteVertexArrays(1, &vao);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
+
+    // Restore GL state
+    if (depthTestWasEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (cullFaceWasEnabled)  glEnable(GL_CULL_FACE);  else glDisable(GL_CULL_FACE);
+    if (!blendWasEnabled)    glDisable(GL_BLEND);
     glUseProgram(savedProgram);
 }
 

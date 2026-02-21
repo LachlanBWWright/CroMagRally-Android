@@ -16,3 +16,4 @@ android/app/build/
 android/local.properties
 android/*.keystore
 android/gradle/wrapper/gradle-wrapper.jar
+_codeql_detected_source_root
