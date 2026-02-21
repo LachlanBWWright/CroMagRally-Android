@@ -245,13 +245,13 @@ static const char* kFragmentShaderSrc =
 "        float a = color.a;\n"
 "        float ref = u_alphaRef;\n"
 "        bool pass;\n"
-"        if      (u_alphaFunc == 0x0205) pass = (a != ref);   // GL_NOTEQUAL\n"
-"        else if (u_alphaFunc == 0x0204) pass = (a >  ref);   // GL_GREATER\n"
-"        else if (u_alphaFunc == 0x0206) pass = (a >= ref);   // GL_GEQUAL\n"
-"        else if (u_alphaFunc == 0x0201) pass = (a <  ref);   // GL_LESS\n"
-"        else if (u_alphaFunc == 0x0203) pass = (a <= ref);   // GL_LEQUAL\n"
-"        else if (u_alphaFunc == 0x0202) pass = (a == ref);   // GL_EQUAL\n"
-"        else if (u_alphaFunc == 0x0207) pass = true;          // GL_ALWAYS\n"
+"        if      (u_alphaFunc == 517) pass = (a != ref);   // GL_NOTEQUAL  0x205\n"
+"        else if (u_alphaFunc == 516) pass = (a >  ref);   // GL_GREATER   0x204\n"
+"        else if (u_alphaFunc == 518) pass = (a >= ref);   // GL_GEQUAL    0x206\n"
+"        else if (u_alphaFunc == 513) pass = (a <  ref);   // GL_LESS      0x201\n"
+"        else if (u_alphaFunc == 515) pass = (a <= ref);   // GL_LEQUAL    0x203\n"
+"        else if (u_alphaFunc == 514) pass = (a == ref);   // GL_EQUAL     0x202\n"
+"        else if (u_alphaFunc == 519) pass = true;          // GL_ALWAYS    0x207\n"
 "        else                             pass = false;          // GL_NEVER\n"
 "        if (!pass) discard;\n"
 "    }\n"
@@ -1033,6 +1033,9 @@ static void FlushImmMode(void) {
 
     // Activate shader and upload uniforms
     ActivateProgram();
+    // Guard: if the shader program failed to compile/link, skip the draw call.
+    // Calling glDrawElements with no active program generates GL_INVALID_OPERATION.
+    if (!gBridge.shader.program) { gBridge.immVertCount = 0; return; }
 
     // Upload vertex data to VBO
     glBindVertexArray(gBridge.immVAO);
@@ -1055,6 +1058,10 @@ static void FlushImmMode(void) {
     glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(ImmVertex, color));
 
     glDrawElements(renderMode, indexCount, GL_UNSIGNED_SHORT, 0);
+    {
+        GLenum _e = glGetError();
+        if (_e != GL_NO_ERROR) BRIDGE_ERR("FlushImmMode glDrawElements error 0x%x (mode=%u count=%d)", _e, renderMode, indexCount);
+    }
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1229,6 +1236,9 @@ static void DrawVertexArrays(GLenum mode, int count, GLenum indexType, const voi
     }
 
     ActivateProgram();
+    // Guard: if the shader program failed to compile/link, skip the draw call.
+    // Calling glDrawElements with no active program generates GL_INVALID_OPERATION.
+    if (!gBridge.shader.program) return;
 
     glBindVertexArray(gBridge.arrVAO);
     glBindBuffer(GL_ARRAY_BUFFER, gBridge.arrVBO);
@@ -1250,6 +1260,10 @@ static void DrawVertexArrays(GLenum mode, int count, GLenum indexType, const voi
         glDrawElements(renderMode, finalIndexCount, GL_UNSIGNED_SHORT, 0);
     } else {
         glDrawArrays(renderMode, 0, count);
+    }
+    {
+        GLenum _e = glGetError();
+        if (_e != GL_NO_ERROR) BRIDGE_ERR("DrawVertexArrays draw error 0x%x (mode=%u n=%d)", _e, renderMode, count);
     }
 
     glBindVertexArray(0);

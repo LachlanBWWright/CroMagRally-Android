@@ -607,6 +607,17 @@ void OGL_DrawScene(void (*drawRoutine)(void))
 				/* DRAW EACH SPLIT-SCREEN PANE IF ANY */
 				/**************************************/
 
+#ifdef __ANDROID__
+	// Drain any GL errors accumulated from setup or the previous frame before
+	// calling the draw routine. This prevents stale errors from being
+	// mis-attributed to the first OGL_CheckError() in the draw path (e.g. MetaObjects.c).
+	{
+		GLenum _e;
+		while ((_e = glGetError()) != GL_NO_ERROR)
+			SDL_Log("OGL_DrawScene: draining stale GL error 0x%x before draw", (unsigned)_e);
+	}
+#endif
+
 	int numPasses = gNumSplitScreenPanes + 1;
 	gDrawingOverlayPane = false;
 
