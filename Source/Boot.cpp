@@ -330,6 +330,8 @@ static const char* kDataDirs[] = {
 // Returns true on success.
 static bool CopyAssetToFile(const char* assetRelPath, const char* destPath)
 {
+	static const size_t kCopyBufSize = 65536;
+
 	SDL_IOStream* src = SDL_IOFromFile(assetRelPath, "rb");
 	if (!src)
 	{
@@ -349,7 +351,7 @@ static bool CopyAssetToFile(const char* assetRelPath, const char* destPath)
 		return false;
 	}
 
-	char buf[65536];
+	char buf[kCopyBufSize];
 	bool ok = true;
 	size_t n;
 	while ((n = SDL_ReadIO(src, buf, sizeof(buf))) > 0)
@@ -376,7 +378,12 @@ static bool ExtractAssets(const char* internalStorage)
 {
 	// Stamp file includes the game version so an app update re-extracts data.
 	char stampPath[512];
-	snprintf(stampPath, sizeof(stampPath), "%s/.assets_" ASSET_STAMP_VERSION, internalStorage);
+	int stampLen = snprintf(stampPath, sizeof(stampPath), "%s/.assets_" ASSET_STAMP_VERSION, internalStorage);
+	if (stampLen < 0 || (size_t)stampLen >= sizeof(stampPath))
+	{
+		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "ExtractAssets: stamp path too long");
+		return false;
+	}
 
 	if (fs::exists(stampPath))
 	{
