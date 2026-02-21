@@ -18,7 +18,7 @@ static ObjNode* gRecordChainHead = 0;
 
 static struct
 {
-	int active : 1;
+	unsigned active : 1;
 	int track : 7;
 	int rank : 8;
 } gTodaysRecords[MAX_TODAYS_RECORDS];
