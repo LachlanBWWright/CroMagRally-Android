@@ -2,27 +2,24 @@ name: Android Build
 
 on:
   push:
-    branches:
-      - main
-      - master
-      - 'copilot/**'
+    branches: ["**"]
   pull_request:
-    branches:
-      - main
-      - master
+    branches: ["**"]
+
+permissions:
+  contents: read
 
 jobs:
-  build-android:
+  build-android-apk:
     name: Build Android APK
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 60
 
     steps:
       - name: Record session start timestamp
         run: echo "Session started at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -30,126 +27,49 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Clone SDL3
+        run: git clone --depth 1 https://github.com/libsdl-org/SDL.git extern/SDL
+
+      - name: Copy SDL Java bridge files
+        run: |
+          mkdir -p android/app/src/main/java/org/libsdl/app
+          cp extern/SDL/android-project/app/src/main/java/org/libsdl/app/*.java \
+             android/app/src/main/java/org/libsdl/app/
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install NDK and CMake
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install CMake and NDK
         run: |
-          sdkmanager --install "ndk;27.3.13750724" "cmake;3.22.1"
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+          sdkmanager "cmake;3.22.1"
+          sdkmanager "ndk;27.3.13750724"
 
-      - name: Download SDL3 source for Android build
-        run: |
-          SDL3_VERSION="3.2.10"
-          # Download SDL3 source and place at extern/SDL
-          if [ ! -d "extern/SDL" ]; then
-            echo "Downloading SDL3 ${SDL3_VERSION} source..."
-            curl -L -o /tmp/sdl3.tar.gz \
-              "https://github.com/libsdl-org/SDL/releases/download/release-${SDL3_VERSION}/SDL3-${SDL3_VERSION}.tar.gz" || \
-            curl -L -o /tmp/sdl3.tar.gz \
-              "https://github.com/libsdl-org/SDL/archive/refs/tags/release-${SDL3_VERSION}.tar.gz"
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: gradle wrapper --gradle-version=8.9
 
-            mkdir -p extern/SDL
-            tar -xzf /tmp/sdl3.tar.gz -C extern/SDL --strip-components=1
-            echo "SDL3 source extracted to extern/SDL"
-            ls extern/SDL/ | head -20
-          fi
-
-      - name: Copy SDL3 Java files to Android project
-        run: |
-          # SDL3's Java activity files need to be in our Android project
-          SDL_JAVA_SRC="extern/SDL/android-project/app/src/main/java"
-          DEST_JAVA="android/app/src/main/java"
-
-          if [ -d "$SDL_JAVA_SRC/org/libsdl" ]; then
-            echo "Copying SDL3 Java files..."
-            cp -r "$SDL_JAVA_SRC/org" "$DEST_JAVA/"
-            echo "Copied SDL3 Java files to $DEST_JAVA"
-            find "$DEST_JAVA/org" -name "*.java" | head -10
-          else
-            echo "SDL3 Java files not found at expected location, checking..."
-            find extern/SDL -name "SDLActivity.java" 2>/dev/null | head -5
-          fi
-
-      - name: Set up Gradle wrapper
+      - name: Build Debug APK
         working-directory: android
         run: |
-          # Use gradle wrapper task to generate the jar if not present
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            # Download from official gradle releases
-            GRADLE_VERSION="8.9"
-            GRADLE_ALL_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-all.zip"
-            echo "Downloading Gradle ${GRADLE_VERSION}..."
-            curl -L -o /tmp/gradle-${GRADLE_VERSION}.zip "${GRADLE_ALL_URL}"
-            unzip -q /tmp/gradle-${GRADLE_VERSION}.zip -d /tmp/gradle-unzip/
-            GRADLE_LIB="/tmp/gradle-unzip/gradle-${GRADLE_VERSION}/lib"
-            # Find and copy the wrapper jar
-            WRAPPER_JAR=$(find "$GRADLE_LIB" -name "gradle-wrapper-*.jar" | head -1)
-            if [ -n "$WRAPPER_JAR" ]; then
-              cp "$WRAPPER_JAR" gradle/wrapper/gradle-wrapper.jar
-              echo "Gradle wrapper jar copied from: $WRAPPER_JAR"
-            else
-              # Try alternative name
-              WRAPPER_JAR=$(find "$GRADLE_LIB" -name "*wrapper*.jar" | head -1)
-              if [ -n "$WRAPPER_JAR" ]; then
-                cp "$WRAPPER_JAR" gradle/wrapper/gradle-wrapper.jar
-                echo "Gradle wrapper jar copied from: $WRAPPER_JAR"
-              else
-                echo "Warning: Could not find gradle wrapper jar, listing lib directory:"
-                ls "$GRADLE_LIB" | head -20
-              fi
-            fi
-          fi
-          echo "Gradle wrapper status:"
-          ls -la gradle/wrapper/
-
-      - name: Build debug APK
-        working-directory: android
-        run: |
-          chmod +x gradlew
-          # Set ANDROID_SDK_ROOT and NDK paths
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.3.13750724" >> local.properties
-          ./gradlew assembleDebug --stacktrace --no-daemon 2>&1 | tee /tmp/gradle-debug.log
-          echo "Build exit code: ${PIPESTATUS[0]}"
+          ./gradlew assembleDebug --stacktrace
         env:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
 
-      - name: Build release APK (unsigned)
-        working-directory: android
-        continue-on-error: true  # Allow failure if signing not configured
-        run: |
-          ./gradlew assembleRelease --no-daemon 2>&1 | tee /tmp/gradle-release.log
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-
-      - name: Show build output
-        if: always()
-        run: |
-          echo "=== APK files found ==="
-          find android -name "*.apk" -type f 2>/dev/null
-          echo "=== APK directories ==="
-          ls android/app/build/outputs/apk/ 2>/dev/null || echo "No APK output directory"
-
-      - name: Upload debug APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: CroMagRally-Android-debug
           path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload release APK artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CroMagRally-Android-release
-          path: android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 30
 
       - name: Record session end timestamp

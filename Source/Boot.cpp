@@ -21,9 +21,7 @@ extern "C"
 }
 
 #ifdef __ANDROID__
-#include <filesystem>
 #include <fstream>
-#include <system_error>
 #include <android/asset_manager.h>
 #include <SDL3/SDL_system.h>
 
@@ -56,8 +54,7 @@ static bool ExtractAssets(const fs::path& internalStoragePath)
 	for (int di = 0; dirs[di]; di++)
 	{
 		fs::path destDir = internalStoragePath / "Data" / dirs[di];
-		std::error_code ec;
-		std::filesystem::create_directories(destDir, ec);
+		fs::create_directories(destDir);
 	}
 
 	// We don't enumerate - just try to open known patterns
@@ -202,8 +199,7 @@ static void Boot(int argc, char** argv)
 	// Create ~/.config directory for Pomme preferences
 	if (internalStorage)
 	{
-		std::error_code ec;
-		std::filesystem::create_directories(std::string(internalStorage) + "/.config", ec);
+		fs::create_directories(std::string(internalStorage) + "/.config");
 	}
 #endif // __ANDROID__
 

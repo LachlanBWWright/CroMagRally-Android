@@ -23,10 +23,8 @@ android {
                 arguments(
                     "-DANDROID_STL=c++_shared",
                     "-DBUILD_SDL_FROM_SOURCE=ON",
-                    "-DSDL3_DIR=${rootProject.projectDir.parentFile}/extern/SDL",
                     "-DSDL_STATIC=OFF",
-                    "-DANDROID=TRUE",
-                    "-DANDROID_PLATFORM=android-24"
+                    "-DANDROID=TRUE"
                 )
             }
         }
@@ -39,16 +37,23 @@ android {
         }
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
     sourceSets {
         getByName("main") {
             assets.srcDirs("../../Data")
-            // SDL3 Java files will be in java/ after CI copies them
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+        }
+        debug {
+            isDebuggable = true
         }
     }
 }

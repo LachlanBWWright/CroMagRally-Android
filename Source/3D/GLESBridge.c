@@ -699,7 +699,7 @@ void bridge_Scalef(GLfloat x, GLfloat y, GLfloat z) {
     mat4_scale(ActiveStack()->stack[ActiveStack()->top], x, y, z);
 }
 
-void bridge_Ortho(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
+void bridge_Ortho(double l, double r, double b, double t, double n, double f) {
     Mat4 m;
     mat4_ortho(m, l, r, b, t, n, f);
     Mat4 tmp;
@@ -707,7 +707,7 @@ void bridge_Ortho(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GL
     mat4_copy(tmp, ActiveStack()->stack[ActiveStack()->top]);
 }
 
-void bridge_Frustum(GLdouble l, GLdouble r, GLdouble b, GLdouble t, GLdouble n, GLdouble f) {
+void bridge_Frustum(double l, double r, double b, double t, double n, double f) {
     Mat4 m;
     mat4_frustum(m, l, r, b, t, n, f);
     Mat4 tmp;
@@ -945,10 +945,6 @@ void bridge_Begin(GLenum mode) {
     gBridge.immVertCount = 0;
 }
 
-void bridge_Vertex2f(GLfloat x, GLfloat y) {
-    bridge_Vertex3f(x, y, 0.0f);
-}
-
 void bridge_Vertex3f(GLfloat x, GLfloat y, GLfloat z) {
     if (gBridge.immVertCount >= MAX_IMM_VERTS) {
         BRIDGE_ERR("Immediate mode vertex buffer overflow");
@@ -959,6 +955,10 @@ void bridge_Vertex3f(GLfloat x, GLfloat y, GLfloat z) {
     memcpy(v->normal,   gBridge.currentNormal,   3*sizeof(float));
     memcpy(v->texcoord, gBridge.currentTexCoord, 2*sizeof(float));
     memcpy(v->color,    gBridge.currentColor,    4*sizeof(float));
+}
+
+void bridge_Vertex2f(GLfloat x, GLfloat y) {
+    bridge_Vertex3f(x, y, 0.0f);
 }
 
 void bridge_Vertex3fv(const GLfloat* v) {
