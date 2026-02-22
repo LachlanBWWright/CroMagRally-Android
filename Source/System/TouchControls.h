@@ -32,6 +32,10 @@ void TouchControls_Shutdown(void);
 // Call once per frame with the current SDL event (before polling is done)
 void TouchControls_ProcessEvent(const SDL_Event* event);
 
+// Call BEFORE SDL event polling each frame to snapshot button states for
+// new-press detection and clear the unhandled-tap flag.
+void TouchControls_BeginFrame(void);
+
 // Call after all events have been processed
 void TouchControls_EndFrame(void);
 
@@ -41,6 +45,11 @@ TCVector2D TouchControls_GetSteering(void);
 // Returns whether a specific need button (kNeed_ThrowForward etc.) is touched
 bool TouchControls_IsNeedPressed(int needID);
 bool TouchControls_IsNeedPressedNew(int needID);
+
+// Returns true if there was a finger-down event this frame that was not
+// captured by any TC button or joystick zone (i.e. a tap on the game world
+// or a menu item row).
+bool TouchControls_HasNewUnhandledTap(void);
 
 // Reset the gyroscope reference angle (re-center)
 void TouchControls_RecenterGyro(void);
@@ -63,10 +72,12 @@ bool TouchControls_GetGameMode(void);
 static inline void TouchControls_Init(void) {}
 static inline void TouchControls_Shutdown(void) {}
 static inline void TouchControls_ProcessEvent(const SDL_Event* e) { (void)e; }
+static inline void TouchControls_BeginFrame(void) {}
 static inline void TouchControls_EndFrame(void) {}
 static inline TCVector2D TouchControls_GetSteering(void) { return (TCVector2D){0,0}; }
 static inline bool TouchControls_IsNeedPressed(int n) { (void)n; return false; }
 static inline bool TouchControls_IsNeedPressedNew(int n) { (void)n; return false; }
+static inline bool TouchControls_HasNewUnhandledTap(void) { return false; }
 static inline void TouchControls_RecenterGyro(void) {}
 static inline void TouchControls_Draw(void) {}
 typedef int SteeringMode;

@@ -1585,12 +1585,13 @@ void OGL_DisableLighting(void)
 
 static char* UpdateDebugText(void)
 {
-	static char debugTextBuffer[256];
+	static char debugTextBuffer[512];
 	extern short gNumFreeSupertiles;
 	extern int gFreeTwitches;
 
 	SDL_snprintf(debugTextBuffer, sizeof(debugTextBuffer),
-		"FPS:\t%d"
+		"BUILD:\t" __DATE__ "\v " __TIME__
+		"\nFPS:\t%d"
 		"\nTRIS:\t%d"
 		"\nOBJS:\t%d"
 		"\nVRAM:\t%d\vK"
@@ -1632,9 +1633,8 @@ static char* UpdateDebugText(void)
 static void MoveDebugText(ObjNode* theNode)
 {
 #ifdef __ANDROID__
-	// On Android, hide the FPS overlay in normal debug mode (gDebugMode=1).
-	// It remains visible for extra-verbose mode (gDebugMode>1) to aid debugging.
-	if (SetObjectVisible(theNode, gDebugMode > 1))
+	// On Android, show the FPS/timestamp overlay in debug mode (gDebugMode>=1).
+	if (SetObjectVisible(theNode, gDebugMode >= 1))
 	{
 		TextMesh_Update(UpdateDebugText(), kTextMeshAlignLeft, theNode);
 	}

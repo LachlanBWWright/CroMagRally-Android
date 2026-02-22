@@ -12,6 +12,9 @@
 #ifndef __ANDROID__
 #include <SDL3/SDL_opengl.h>
 #endif
+#ifdef __ANDROID__
+#include "TouchControls.h"
+#endif
 #include <math.h>
 
 #define DECLARE_WORKBUF(buf, bufSize) char (buf)[256]; const int (bufSize) = 256
@@ -809,12 +812,18 @@ static void NavigateSettingEntriesMouseHover(void)
 		return;
 	}
 #else  // __ANDROID__
-	// On Android, SDL synthesizes mouse events from touch events, so the mouse position
-	// reflects the last touch location. Skip hover when directional buttons are being used
-	// to avoid the synthesized position interfering with up/down navigation.
+	// On Android, SDL synthesizes mouse events from touch events, so the mouse
+	// position reflects the last touch location. We only process hover when
+	// there is a new touch that was NOT consumed by a TC button or joystick —
+	// this prevents TC button taps from accidentally changing the menu row.
 	if (GetNeedStateAnyP(kNeed_UIUp) || GetNeedStateAnyP(kNeed_UIDown))
 	{
 		gNav->mouseHoverValid = false;
+		return;
+	}
+	if (!TouchControls_HasNewUnhandledTap())
+	{
+		gNav->mouseHoverValid = false;	// no new tap — clear hover so held taps don't retrigger
 		return;
 	}
 #endif
@@ -896,9 +905,17 @@ static void NavigateSettingEntriesMouseHover(void)
 
 static void NavigatePick(const MenuItem* entry)
 {
-	if (GetNewNeedStateAnyP(kNeed_UIConfirm)
-			|| (gNav->mouseHoverValid && GetNewClickState(SDL_BUTTON_LEFT))
-			)
+	// On Android we use TC button (UIConfirm) or a direct tap on the menu item
+	// row (detected via TouchControls_HasNewUnhandledTap + mouseHoverValid).
+	// On desktop we use UIConfirm or a left-click while hovering.
+#ifdef __ANDROID__
+	bool shouldPick = GetNewNeedStateAnyP(kNeed_UIConfirm)
+		|| (gNav->mouseHoverValid && TouchControls_HasNewUnhandledTap());
+#else
+	bool shouldPick = GetNewNeedStateAnyP(kNeed_UIConfirm)
+		|| (gNav->mouseHoverValid && GetNewClickState(SDL_BUTTON_LEFT));
+#endif
+	if (shouldPick)
 	{
 		PlayConfirmEffect();
 

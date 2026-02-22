@@ -143,6 +143,10 @@ static struct
     // Mode toggle button
     float       modeBtnCX, modeBtnCY, modeBtnR;
     int         modeBtnFinger;
+
+    // Set to true when a finger-down event is not captured by any TC zone.
+    // Used so NavigatePick can detect a tap directly on a menu item row.
+    bool        hasNewUnhandledTap;
 } gTC;
 
 // ============================================================
@@ -300,6 +304,9 @@ static void ProcessFingerDown(float nx, float ny, SDL_FingerID fingerID)
             return;
         }
     }
+
+    // Finger was not consumed by any TC zone; mark as unhandled tap.
+    gTC.hasNewUnhandledTap = true;
 }
 
 static void ProcessFingerUp(SDL_FingerID fingerID)
@@ -422,16 +429,36 @@ void TouchControls_ProcessEvent(const SDL_Event* event)
 }
 
 // ============================================================
-// END-OF-FRAME UPDATE
+// PER-FRAME BOOKKEEPING
 // ============================================================
 
-void TouchControls_EndFrame(void)
+// Call BEFORE processing SDL events each frame to capture the previous
+// button states. This enables IsNeedPressedNew to correctly report a
+// button as "newly pressed" on the frame the finger first touches it.
+void TouchControls_BeginFrame(void)
 {
-    // Update button "was pressed" states
+    // Snapshot button states BEFORE new events arrive.
     for (int i = 0; i < gTC.numButtons; i++)
     {
         gTC.buttons[i].wasPressed = gTC.buttons[i].pressed;
     }
+
+    // Clear the unhandled-tap flag so it only fires for one frame.
+    gTC.hasNewUnhandledTap = false;
+}
+
+// Returns true if there was a finger-down event this frame that was not
+// captured by any TC button or joystick zone (i.e. a tap on the game world
+// or a menu item row). The flag is cleared at the start of each frame by
+// TouchControls_BeginFrame(), so this can be called multiple times safely.
+bool TouchControls_HasNewUnhandledTap(void)
+{
+    return gTC.hasNewUnhandledTap;
+}
+
+void TouchControls_EndFrame(void)
+{
+    // (wasPressed is now updated by TouchControls_BeginFrame at frame start.)
 
     // Get screen size
     extern SDL_Window* gSDLWindow;

@@ -249,6 +249,9 @@ void DoSDLMaintenance(void)
 			/* DO SDL MAINTENANCE */
 			/**********************/
 
+	// Snapshot TC button states BEFORE events so new-press detection works.
+	TouchControls_BeginFrame();
+
 	SDL_PumpEvents();
 	SDL_Event event;
 	while (SDL_PollEvent(&event))
@@ -547,9 +550,6 @@ Boolean UserWantsOut(void)
 	return GetNewNeedStateAnyP(kNeed_UIConfirm)
 		|| GetNewNeedStateAnyP(kNeed_UIBack)
 		|| GetNewNeedStateAnyP(kNeed_UIPause)
-#ifdef __ANDROID__
-		|| GetNewClickState(SDL_BUTTON_LEFT)   // touch tap = any-key on Android
-#endif
         ;
 }
 
