@@ -218,7 +218,6 @@ static const char *kVertexShaderSrc =
 "\n"
 "uniform mat4 u_mvMatrix;\n"
 "uniform mat4 u_projMatrix;\n"
-"uniform mat4 u_mvpMatrix;\n"
 "uniform mat3 u_normalMatrix;\n"
 "uniform bool u_lightingEnabled;\n"
 "uniform bool u_colorMaterialEnabled;\n"  // use vertex color as material
@@ -240,10 +239,13 @@ static const char *kVertexShaderSrc =
 "\n"
 "out vec4 v_color;\n"
 "out vec2 v_texcoord;\n"
+"out float v_fogDepth;\n"
 "\n"
 "void main() {\n"
-"    gl_Position = u_mvpMatrix * vec4(a_position, 1.0);\n"
+"    vec4 eyePos4 = u_mvMatrix * vec4(a_position, 1.0);\n"
+"    gl_Position = u_projMatrix * eyePos4;\n"
 "    v_texcoord = a_texcoord;\n"
+"    v_fogDepth = abs(eyePos4.z);\n"
 "\n"
 "    if (u_lightingEnabled) {\n"
 "        vec4 matDiffuse = u_colorMaterialEnabled ? a_color : u_materialDiffuse;\n"
@@ -291,6 +293,7 @@ static const char *kFragmentShaderSrc =
 "\n"
 "in vec4 v_color;\n"
 "in vec2 v_texcoord;\n"
+"in float v_fogDepth;\n"
 "\n"
 "out vec4 fragColor;\n"
 "\n"
@@ -319,14 +322,14 @@ static const char *kFragmentShaderSrc =
 "\n"
 "    // Fog\n"
 "    if (u_fogEnabled) {\n"
-"        float depth = gl_FragCoord.z / gl_FragCoord.w;\n"
 "        float fogFactor;\n"
+"        float fogDepth = v_fogDepth;\n"
 "        if (u_fogMode == 0x2601) { // GL_LINEAR\n"
-"            fogFactor = clamp((u_fogEnd - depth) / (u_fogEnd - u_fogStart), 0.0, 1.0);\n"
+"            fogFactor = clamp((u_fogEnd - fogDepth) / (u_fogEnd - u_fogStart), 0.0, 1.0);\n"
 "        } else if (u_fogMode == 0x0800) { // GL_EXP\n"
-"            fogFactor = clamp(exp(-u_fogDensity * depth), 0.0, 1.0);\n"
+"            fogFactor = clamp(exp(-u_fogDensity * fogDepth), 0.0, 1.0);\n"
 "        } else { // GL_EXP2\n"
-"            float d = u_fogDensity * depth;\n"
+"            float d = u_fogDensity * fogDepth;\n"
 "            fogFactor = clamp(exp(-d * d), 0.0, 1.0);\n"
 "        }\n"
 "        color.rgb = mix(u_fogColor.rgb, color.rgb, fogFactor);\n"
@@ -1118,21 +1121,21 @@ void bridge_DrawElements(GLenum mode, GLsizei count, GLenum type, const void *in
     glEnableVertexAttribArray(gAttrColor);
     glVertexAttribPointer(gAttrColor, 4, GL_FLOAT, GL_FALSE, stride, (void*)offsetof(BridgeVertex, color));
 
-    // Upload indices - convert to uint32 if needed (GLES3 supports GL_UNSIGNED_INT)
+    // Upload indices and draw
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gArrayIBO);
     if (type == GL_UNSIGNED_INT) {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * 4, indices, GL_STREAM_DRAW);
-        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, (void*)0);
+        glDrawElements(mode, count, GL_UNSIGNED_INT, (void*)0);
     } else if (type == GL_UNSIGNED_SHORT) {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * 2, indices, GL_STREAM_DRAW);
-        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, (void*)0);
+        glDrawElements(mode, count, GL_UNSIGNED_SHORT, (void*)0);
     } else if (type == GL_UNSIGNED_BYTE) {
         uint16_t *idx16 = (uint16_t*)malloc(count * 2);
         const uint8_t *idx8 = (const uint8_t*)indices;
         for (int i = 0; i < count; i++) idx16[i] = idx8[i];
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * 2, idx16, GL_STREAM_DRAW);
         free(idx16);
-        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, (void*)0);
+        glDrawElements(mode, count, GL_UNSIGNED_SHORT, (void*)0);
     }
 
     glDisableVertexAttribArray(gAttrPosition);
