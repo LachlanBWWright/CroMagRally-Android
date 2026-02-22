@@ -99,7 +99,7 @@ void ToolBoxInit(void)
 {
 OSErr		iErr;
 
-#if _DEBUG && !defined(__ANDROID__)				// in debug builds, boot with debug mode (you can turn it off with F8)
+#if _DEBUG								// in debug builds, boot with debug mode (you can turn it off with F8)
 	gDebugMode = 1;
 #endif
 

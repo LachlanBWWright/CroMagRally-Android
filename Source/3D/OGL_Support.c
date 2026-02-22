@@ -1631,10 +1631,14 @@ static char* UpdateDebugText(void)
 
 static void MoveDebugText(ObjNode* theNode)
 {
+#ifdef __ANDROID__
+	SetObjectVisible(theNode, false);			// never show debug overlay on Android
+#else
 	if (SetObjectVisible(theNode, gDebugMode != 0))
 	{
 		TextMesh_Update(UpdateDebugText(), kTextMeshAlignLeft, theNode);
 	}
+#endif
 }
 
 static void InitDebugText(void)
