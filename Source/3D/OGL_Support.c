@@ -1632,7 +1632,12 @@ static char* UpdateDebugText(void)
 static void MoveDebugText(ObjNode* theNode)
 {
 #ifdef __ANDROID__
-	SetObjectVisible(theNode, false);			// never show debug overlay on Android
+	// On Android, hide the FPS overlay in normal debug mode (gDebugMode=1).
+	// It remains visible for extra-verbose mode (gDebugMode>1) to aid debugging.
+	if (SetObjectVisible(theNode, gDebugMode > 1))
+	{
+		TextMesh_Update(UpdateDebugText(), kTextMeshAlignLeft, theNode);
+	}
 #else
 	if (SetObjectVisible(theNode, gDebugMode != 0))
 	{

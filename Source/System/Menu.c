@@ -802,9 +802,16 @@ static void NavigateSettingEntriesVertically(int delta)
 
 static void NavigateSettingEntriesMouseHover(void)
 {
-#ifndef __ANDROID__
-	// On desktop, only check hover when mouse has moved.
-	// On Android, SDL synthesizes mouse-from-touch so we always check.
+#ifdef __ANDROID__
+	// On Android, skip hover when directional buttons are being used
+	// to avoid the synthesized mouse position interfering with up/down navigation.
+	if (GetNeedStateAnyP(kNeed_UIUp) || GetNeedStateAnyP(kNeed_UIDown))
+	{
+		gNav->mouseHoverValid = false;
+		return;
+	}
+#else
+	// On desktop, only process hover when the mouse has actually moved.
 	if (!gMouseMotionNow)
 	{
 		return;
@@ -869,8 +876,10 @@ static void NavigateSettingEntriesMouseHover(void)
 
 			if (gNav->menuRow != row)
 			{
+				TwitchOutSelection();
 				gNav->menuRow = row;
 				PlayEffect(kSfxNavigate);
+				TwitchSelection();
 			}
 
 			return;
