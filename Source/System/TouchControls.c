@@ -16,6 +16,9 @@
 #define LOG_TAG "TouchControls"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 
+// Reference to main window (defined in Boot.cpp)
+extern SDL_Window *gSDLWindow;
+
 // ---------------------------------------------------------------------------
 // Layout constants (in normalized screen coords, 0..1)
 // Designed for landscape orientation.
@@ -286,6 +289,9 @@ void TouchControls_Init(void)
     gGyroSteer = 0.0f;
     gGyroBaseZ = 0.0f;
 
+    // Initialize SDL joystick subsystem for virtual controller
+    SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_SENSOR);
+
     InitGyro();
     InitVirtualGamepad();
     HudInitGL();
@@ -538,9 +544,11 @@ bool TouchControls_HandleEvent(const SDL_Event *event)
         case SDL_EVENT_FINGER_DOWN:
         {
             int w, h;
-            SDL_GetWindowSize(SDL_GetWindowFromEvent(event), &w, &h);
+            if (gSDLWindow) SDL_GetWindowSizeInPixels(gSDLWindow, &w, &h);
+            else { w = gScreenW; h = gScreenH; }
             if (w > 0) gScreenW = w;
             if (h > 0) gScreenH = h;
+            // In SDL3, tfinger.x/y are normalized 0..1
             HandleTouchDown(event->tfinger.fingerID,
                 event->tfinger.x * gScreenW,
                 event->tfinger.y * gScreenH);

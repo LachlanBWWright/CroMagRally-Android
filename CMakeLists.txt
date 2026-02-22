@@ -338,8 +338,6 @@ if(WIN32)
 endif()
 
 # Copy documentation to output folder
-if(NOT ANDROID)
 configure_file(${CMAKE_SOURCE_DIR}/packaging/ReadMe.txt.in ${CMAKE_CURRENT_BINARY_DIR}/ReadMe.txt)
-endif()
 
 endif() # NOT ANDROID

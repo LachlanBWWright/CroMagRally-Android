@@ -193,6 +193,15 @@ typedef double GLclampd;
 #ifndef GL_RGB5_A1
 #define GL_RGB5_A1                  0x8057
 #endif
+#ifndef GL_CURRENT_COLOR
+#define GL_CURRENT_COLOR            0x0B00
+#endif
+#ifndef GL_BLEND_SRC
+#define GL_BLEND_SRC                0x0BE1
+#endif
+#ifndef GL_BLEND_DST
+#define GL_BLEND_DST                0x0BE0
+#endif
 #ifndef GL_FOG_HINT
 #define GL_FOG_HINT                 0x0C54
 #endif
@@ -277,6 +286,10 @@ typedef double GLclampd;
 #define glEnable                    bridge_Enable
 #define glDisable                   bridge_Disable
 #define glIsEnabled                 bridge_IsEnabled
+
+// GL getter wrappers
+#define glGetFloatv                 bridge_GetFloatv
+#define glGetIntegerv               bridge_GetIntegerv
 
 // Texture enable/disable handled by bridge (GL_TEXTURE_2D)
 // Other GL enables/disables are passed through to native GLES

@@ -80,6 +80,10 @@ void bridge_Enable(GLenum cap);
 void bridge_Disable(GLenum cap);
 GLboolean bridge_IsEnabled(GLenum cap);
 
+// GL getters (intercept params not supported in GLES3)
+void bridge_GetFloatv(GLenum pname, GLfloat *data);
+void bridge_GetIntegerv(GLenum pname, GLint *data);
+
 // Stubs
 void bridge_PolygonMode(GLenum face, GLenum mode);
 void bridge_Hint(GLenum target, GLenum hint);

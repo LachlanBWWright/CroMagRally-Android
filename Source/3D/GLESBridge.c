@@ -7,6 +7,7 @@
 #include <GLES3/gl3.h>
 #include <android/log.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <math.h>
 #include <stdbool.h>
@@ -992,17 +993,17 @@ void bridge_DrawElements(GLenum mode, GLsizei count, GLenum type, const void *in
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gArrayIBO);
     if (type == GL_UNSIGNED_INT) {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * 4, indices, GL_STREAM_DRAW);
-        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, (void*)0);
     } else if (type == GL_UNSIGNED_SHORT) {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * 2, indices, GL_STREAM_DRAW);
-        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, 0);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, (void*)0);
     } else if (type == GL_UNSIGNED_BYTE) {
         uint16_t *idx16 = (uint16_t*)malloc(count * 2);
         const uint8_t *idx8 = (const uint8_t*)indices;
         for (int i = 0; i < count; i++) idx16[i] = idx8[i];
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * 2, idx16, GL_STREAM_DRAW);
         free(idx16);
-        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, 0);
+        glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, (void*)0);
     }
 
     glDisableVertexAttribArray(gAttrPosition);
@@ -1226,6 +1227,47 @@ GLboolean bridge_IsEnabled(GLenum cap)
         case 0x0DE1: return gTextureEnabled  ? GL_TRUE : GL_FALSE;
         default:     return glIsEnabled(cap);
     }
+}
+
+// ---------------------------------------------------------------------------
+// GL getter wrappers for GLES3 incompatibilities
+// ---------------------------------------------------------------------------
+
+#ifndef GL_CURRENT_COLOR
+#define GL_CURRENT_COLOR  0x0B00
+#endif
+#ifndef GL_BLEND_SRC
+#define GL_BLEND_SRC      0x0BE1
+#endif
+#ifndef GL_BLEND_DST
+#define GL_BLEND_DST      0x0BE0
+#endif
+
+void bridge_GetFloatv(GLenum pname, GLfloat *data)
+{
+    if (pname == GL_CURRENT_COLOR) {
+        data[0] = gCurColor[0];
+        data[1] = gCurColor[1];
+        data[2] = gCurColor[2];
+        data[3] = gCurColor[3];
+        return;
+    }
+    glGetFloatv(pname, data);
+}
+
+void bridge_GetIntegerv(GLenum pname, GLint *data)
+{
+    if (pname == GL_BLEND_SRC) {
+        // GLES3: use GL_BLEND_SRC_RGB
+        glGetIntegerv(0x80C9 /*GL_BLEND_SRC_RGB*/, data);
+        return;
+    }
+    if (pname == GL_BLEND_DST) {
+        // GLES3: use GL_BLEND_DST_RGB
+        glGetIntegerv(0x80C8 /*GL_BLEND_DST_RGB*/, data);
+        return;
+    }
+    glGetIntegerv(pname, data);
 }
 
 // ---------------------------------------------------------------------------
