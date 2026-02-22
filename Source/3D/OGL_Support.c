@@ -1402,6 +1402,24 @@ OGLLightDefType	*lights;
 	OGLMatrix4x4_GetFrustumToWindow(&gFrustumToWindowMatrix[camNum], camNum);
 	OGLMatrix4x4_Multiply(&gLocalToFrustumMatrix, &gFrustumToWindowMatrix[camNum], &gWorldToWindowMatrix[camNum]);
 
+#ifdef __ANDROID__
+	{
+		static int sCamLogCounter = 0;
+		if (sCamLogCounter < 5)
+		{
+			sCamLogCounter++;
+			const OGLPoint3D* cam = &gGameView->cameraPlacement[camNum].cameraLocation;
+			const OGLPoint3D* poi = &gGameView->cameraPlacement[camNum].pointOfInterest;
+			SDL_Log("Camera[%d] pane=%d: from(%.1f,%.1f,%.1f) to(%.1f,%.1f,%.1f) fov=%.2f vp=(%d,%d,%dx%d)",
+				sCamLogCounter, camNum,
+				cam->x, cam->y, cam->z, poi->x, poi->y, poi->z,
+				gGameView->fov[camNum],
+				gGameView->panes[camNum].vpx, gGameView->panes[camNum].vpy,
+				gGameView->panes[camNum].vpw, gGameView->panes[camNum].vph);
+		}
+	}
+#endif
+
 	UpdateListenerLocation();
 }
 

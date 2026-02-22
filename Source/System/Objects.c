@@ -787,6 +787,20 @@ short			skelType, playerNum;
 			GAME_ASSERT(theNode->Projection == gMyState_ProjectionType);
 		}
 
+#ifdef __ANDROID__
+		{
+			static int sDrawObjLog = 0;
+			if (sDrawObjLog < 20)  // log first 20 objects drawn to identify what renders
+			{
+				sDrawObjLog++;
+				SDL_Log("DrawObjects[%d]: slot=%d genre=%d type=%d proj=%d cull=%d lit=%d blend=%d",
+					sDrawObjLog, (int)theNode->Slot, (int)theNode->Genre, (int)theNode->Type,
+					(int)theNode->Projection, !(int)(statusBits & STATUS_BIT_DONTCULL),
+					!(int)(statusBits & STATUS_BIT_NOLIGHTING), (int)(statusBits & STATUS_BIT_BLEND));
+			}
+		}
+#endif
+
 
 			/***********************/
 			/* SUBMIT THE GEOMETRY */
