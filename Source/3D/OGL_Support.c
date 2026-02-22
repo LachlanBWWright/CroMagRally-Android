@@ -13,7 +13,12 @@
 #include "game.h"
 #include "stb_image.h"
 #include "pillarbox.h"
+#ifndef __ANDROID__
 #include <SDL3/SDL_opengl.h>
+#endif
+#ifdef __ANDROID__
+#include "touch_controls.h"
+#endif
 #include <math.h>
 
 extern SDL_Window*		gSDLWindow;
@@ -102,6 +107,11 @@ void OGL_Boot(void)
 	OGL_CreateDrawContext();
 	OGL_CheckError();
 
+#ifdef __ANDROID__
+	bridge_Init();
+	TouchControls_Init();
+#endif
+
 	OGL_InitDrawContext();
 	OGL_CheckError();
 
@@ -142,6 +152,10 @@ void OGL_Boot(void)
 
 void OGL_Shutdown(void)
 {
+#ifdef __ANDROID__
+	TouchControls_Shutdown();
+	bridge_Shutdown();
+#endif
 	OGL_DisposeDrawContext();
 }
 
@@ -542,6 +556,10 @@ void OGL_DrawScene(void (*drawRoutine)(void))
 	bool didMakeCurrent = SDL_GL_MakeCurrent(gSDLWindow, gAGLContext);		// make context active
 	GAME_ASSERT_MESSAGE(didMakeCurrent, SDL_GetError());
 
+#ifdef __ANDROID__
+	bridge_BeforeDrawScene();
+#endif
+
 
 #if 0
 	if (gGammaFadePercent <= 0)							// if we just finished fading out and haven't started fading in yet, just show black
@@ -645,6 +663,18 @@ void OGL_DrawScene(void (*drawRoutine)(void))
             /**************/
 			/* END RENDER */
 			/**************/
+
+#ifdef __ANDROID__
+	// Draw touch controls overlay and update virtual gamepad
+	{
+		int w, h;
+		SDL_GetWindowSizeInPixels(gSDLWindow, &w, &h);
+		TouchControls_Draw(w, h);
+		TouchControls_Update();
+	}
+	// Restore bridge program after HUD draw
+	bridge_BeforeDrawScene();
+#endif
 
            /* SWAP THE BUFFS */
 
@@ -942,6 +972,45 @@ GLuint	textureName;
 		OGL_FixTextureGamma(imageMemory, width, height, srcFormat, dataType);
 	}
 
+#ifdef __ANDROID__
+	// GLES3 does not support GL_BGRA + GL_UNSIGNED_SHORT_1_5_5_5_REV.
+	// Convert to GL_RGBA + GL_UNSIGNED_BYTE.
+	void *convertedPixels = NULL;
+	if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_SHORT_1_5_5_5_REV)
+	{
+		convertedPixels = bridge_ConvertBGRA1555toRGBA8(imageMemory, width, height);
+		if (convertedPixels)
+		{
+			imageMemory = convertedPixels;
+			srcFormat   = GL_RGBA;
+			destFormat  = GL_RGBA;
+			dataType    = GL_UNSIGNED_BYTE;
+		}
+	}
+	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
+	{
+		// GLES3 doesn't support GL_BGRA with GL_UNSIGNED_BYTE in all drivers.
+		// Convert BGRA → RGBA in-place by swapping R and B channels.
+		int numPixels = width * height;
+		uint8_t *pixels = (uint8_t *)imageMemory;
+		convertedPixels = SDL_malloc(numPixels * 4);
+		if (convertedPixels)
+		{
+			uint8_t *dst = (uint8_t *)convertedPixels;
+			for (int i = 0; i < numPixels; i++)
+			{
+				dst[i*4+0] = pixels[i*4+2];  // R ← B
+				dst[i*4+1] = pixels[i*4+1];  // G
+				dst[i*4+2] = pixels[i*4+0];  // B ← R
+				dst[i*4+3] = pixels[i*4+3];  // A
+			}
+			imageMemory = convertedPixels;
+			srcFormat   = GL_RGBA;
+			destFormat  = GL_RGBA;
+		}
+	}
+#endif
+
 	glTexImage2D(GL_TEXTURE_2D,
 				0,										// mipmap level
 				destFormat,								// format in OpenGL
@@ -951,6 +1020,14 @@ GLuint	textureName;
 				srcFormat,								// what my format is
 				dataType,								// size of each r,g,b
 				imageMemory);							// pointer to the actual texture pixels
+
+#ifdef __ANDROID__
+	if (convertedPixels)
+	{
+		bridge_FreeConvertedPixels(convertedPixels);
+		convertedPixels = NULL;
+	}
+#endif
 
 
 			/* SEE IF RAN OUT OF MEMORY WHILE COPYING TO OPENGL */

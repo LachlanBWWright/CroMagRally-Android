@@ -9,6 +9,11 @@
 #include "PommeInit.h"
 #include "PommeFiles.h"
 
+#ifdef __ANDROID__
+#include "android_assets.h"
+#include <filesystem>
+#endif
+
 extern "C"
 {
 	#include "game.h"
@@ -18,6 +23,32 @@ extern "C"
 	CommandLineOptions gCommandLine;
 	int gCurrentAntialiasingLevel;
 }
+
+#ifdef __ANDROID__
+static fs::path FindGameDataAndroid(void)
+{
+	// Extract assets from APK to internal storage
+	if (!Android_ExtractAssets())
+	{
+		throw std::runtime_error("Failed to extract game data from APK.");
+	}
+
+	const char* dataPathC = Android_GetDataPath();
+	fs::path dataPath = dataPathC;
+	dataPath = dataPath.lexically_normal();
+
+	gDataSpec = Pomme::Files::HostPathToFSSpec(dataPath / "System");
+
+	FSSpec someDataFileSpec;
+	OSErr iErr = FSMakeFSSpec(gDataSpec.vRefNum, gDataSpec.parID, ":System:gamecontrollerdb.txt", &someDataFileSpec);
+	if (iErr)
+	{
+		throw std::runtime_error("Couldn't find gamecontrollerdb.txt in extracted data.");
+	}
+
+	return dataPath;
+}
+#endif
 
 static fs::path FindGameData(const char* executablePath)
 {
@@ -128,12 +159,31 @@ static void Boot(int argc, char** argv)
 
 	ParseCommandLine(argc, argv);
 
+#ifdef __ANDROID__
+	// Set HOME to internal storage path so Pomme can find/write prefs
+	if (!SDL_getenv("HOME"))
+	{
+		const char *internalPath = SDL_GetAndroidInternalStoragePath();
+		if (internalPath)
+		{
+			SDL_setenv_unsafe("HOME", internalPath, 1);
+			// Create ~/.config directory for prefs
+			std::error_code ec;
+			fs::create_directories(std::string(internalPath) + "/.config", ec);
+		}
+	}
+#endif
+
 	// Start our "machine"
 	Pomme::Init();
 
 	// Find path to game data folder
+#ifdef __ANDROID__
+	fs::path dataPath = FindGameDataAndroid();
+#else
 	const char* executablePath = argc > 0 ? argv[0] : NULL;
 	fs::path dataPath = FindGameData(executablePath);
+#endif
 
 	// Load game prefs before starting
 	LoadPrefs();
@@ -146,6 +196,12 @@ retryVideo:
 	}
 
 	// Create window
+#ifdef __ANDROID__
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+	gCurrentAntialiasingLevel = 0;  // no MSAA on Android
+#else
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -156,13 +212,21 @@ retryVideo:
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 1 << gCurrentAntialiasingLevel);
 	}
+#endif
 
+#ifdef __ANDROID__
+	gSDLWindow = SDL_CreateWindow(
+		GAME_FULL_NAME " " GAME_VERSION, 0, 0,
+		SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN);
+#else
 	gSDLWindow = SDL_CreateWindow(
 		GAME_FULL_NAME " " GAME_VERSION, 640, 480,
 		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+#endif
 
 	if (!gSDLWindow)
 	{
+#ifndef __ANDROID__
 		if (gCurrentAntialiasingLevel != 0)
 		{
 			SDL_Log("Couldn't create SDL window with the requested MSAA level. Retrying without MSAA...");
@@ -173,6 +237,7 @@ retryVideo:
 			goto retryVideo;
 		}
 		else
+#endif
 		{
 			throw std::runtime_error("Couldn't create SDL window.");
 		}
@@ -217,8 +282,8 @@ int main(int argc, char** argv)
 	{
 		// no-op, the game may throw this exception to shut us down cleanly
 	}
-#if !(_DEBUG)
-	// In release builds, catch anything that might be thrown by GameMain
+#if !(_DEBUG) || defined(__ANDROID__)
+	// In release builds (and always on Android), catch anything that might be thrown by GameMain
 	// so we can show an error dialog to the user.
 	catch (std::exception& ex)		// Last-resort catch
 	{

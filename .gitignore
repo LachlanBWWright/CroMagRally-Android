@@ -8,3 +8,13 @@ dist/
 .vs/
 .DS_Store
 *.user
+
+# Android build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/java/org/libsdl/
+
+# CodeQL
+_codeql_detected_source_root

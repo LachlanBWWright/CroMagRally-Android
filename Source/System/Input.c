@@ -4,6 +4,10 @@
 
 #include "game.h"
 
+#ifdef __ANDROID__
+#include "touch_controls.h"
+#endif
+
 extern SDL_Window* gSDLWindow;
 
 /***************/
@@ -252,6 +256,10 @@ void DoSDLMaintenance(void)
 	SDL_Event event;
 	while (SDL_PollEvent(&event))
 	{
+#ifdef __ANDROID__
+		if (TouchControls_HandleEvent(&event))
+			continue;
+#endif
 		switch (event.type)
 		{
 			case SDL_EVENT_QUIT:
