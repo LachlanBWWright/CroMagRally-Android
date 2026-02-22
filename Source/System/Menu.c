@@ -1361,10 +1361,8 @@ static void NavigateMenu(void)
 		NavigateSettingEntriesVertically(1);
 		SaveSelectedRowInHistory();
 	}
-	else
-	{
-		NavigateSettingEntriesMouseHover();
-	}
+	// Mouse hover navigation is disabled on Android (no mouse).
+	// Navigation is handled via touch controls (UIUp/UIDown buttons above).
 
 	const MenuItem* entry = &gNav->menu[gNav->menuRow];
 	const MenuItemClass* cls = &kMenuItemClasses[entry->type];

@@ -906,14 +906,29 @@ static void OGL_FixTextureGamma(uint8_t* imageMemory, int width, int height, GLi
 			}
 			break;
 
+		case GL_BGR:
+			if (dataType == GL_UNSIGNED_BYTE)
+			{
+				for (int i = 0; i < 3 * width * height; i += 3)
+				{
+					imageMemory[i+0] = gGammaRamp8[imageMemory[i+0]]; // B
+					imageMemory[i+1] = gGammaRamp8[imageMemory[i+1]]; // G
+					imageMemory[i+2] = gGammaRamp8[imageMemory[i+2]]; // R
+				}
+				return;
+			}
+			break;
+
 		case GL_BGRA:
 			if (dataType == GL_UNSIGNED_BYTE)
 			{
+				// BGRA byte order: B=0, G=1, R=2, A=3
+				// Apply gamma only to colour channels (B, G, R), not alpha.
 				for (int i = 0; i < 4 * width * height; i += 4)
 				{
-					imageMemory[i+1] = gGammaRamp8[imageMemory[i+1]];
-					imageMemory[i+2] = gGammaRamp8[imageMemory[i+2]];
-					imageMemory[i+3] = gGammaRamp8[imageMemory[i+3]];
+					imageMemory[i+0] = gGammaRamp8[imageMemory[i+0]]; // B
+					imageMemory[i+1] = gGammaRamp8[imageMemory[i+1]]; // G
+					imageMemory[i+2] = gGammaRamp8[imageMemory[i+2]]; // R
 				}
 				return;
 			}
@@ -992,8 +1007,26 @@ GLuint	textureName;
 	// reproduce that behaviour on GLES where we promote RGB→RGBA internally.
 	const GLint originalDestFormat = destFormat;
 
+	// --- BGR (3 bytes per pixel, no alpha): not valid in GLES 3.0; convert to RGBA ---
+	if (srcFormat == GL_BGR && dataType == GL_UNSIGNED_BYTE)
+	{
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (convertedPixels)
+		{
+			const uint8_t* src = (const uint8_t*) imageMemory;
+			uint8_t* dst = convertedPixels;
+			for (int i = 0; i < numPixels; i++, src += 3, dst += 4)
+			{
+				dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0]; dst[3] = 255; // BGR→RGBA opaque
+			}
+			imageMemory = convertedPixels;
+			srcFormat = GL_RGBA;
+			destFormat = GL_RGBA;
+		}
+	}
 	// --- BGRA: not a core GLES 3.0 format; must convert to RGBA ---
-	if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
+	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
 	{
 		int numPixels = width * height;
 		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
