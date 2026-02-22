@@ -823,7 +823,7 @@ static void FlushImmediate(GLenum prim, BridgeVertex *verts, int n)
 
     if (prim == GL_QUADS) {
         // Convert GL_QUADS (4 verts each) to GL_TRIANGLES (6 verts each)
-        int numQuads = n / 4;
+        int numQuads = n / 4;  // silently discard any trailing incomplete quad (n%4 vertices)
         drawCount = numQuads * 6;
         tmpVerts = (BridgeVertex*)malloc(drawCount * sizeof(BridgeVertex));
         for (int q = 0; q < numQuads; q++) {
@@ -840,7 +840,7 @@ static void FlushImmediate(GLenum prim, BridgeVertex *verts, int n)
         // Convert GL_QUAD_STRIP to GL_TRIANGLES
         // QUAD_STRIP pairs: (v0,v1,v2,v3), (v2,v3,v4,v5), ...
         // Each pair of 2 new verts adds a quad: [i, i+1, i+3, i, i+3, i+2]
-        int numStrips = (n - 2) / 2;
+        int numStrips = (n >= 2) ? (n - 2) / 2 : 0;
         drawCount = numStrips * 6;
         tmpVerts = (BridgeVertex*)malloc(drawCount * sizeof(BridgeVertex));
         for (int s = 0; s < numStrips; s++) {
@@ -855,7 +855,7 @@ static void FlushImmediate(GLenum prim, BridgeVertex *verts, int n)
         drawVerts = tmpVerts;
         prim = GL_TRIANGLES;
     } else if (prim == GL_POLYGON) {
-        // Convert GL_POLYGON (convex) to GL_TRIANGLE_FAN
+        // Convert GL_POLYGON to GL_TRIANGLE_FAN (only correct for convex polygons)
         prim = GL_TRIANGLE_FAN;
     }
 
@@ -1432,8 +1432,8 @@ void bridge_Hint(GLenum target, GLenum hint)
 void *bridge_ConvertBGRA1555toRGBA8(const void *src, int width, int height)
 {
     // Convert GL_BGRA + GL_UNSIGNED_SHORT_1_5_5_5_REV  →  GL_RGBA + GL_UNSIGNED_BYTE
-    // Input: 16-bit pixels, layout (LSB to MSB): BBBBB GGGGG RRRRR A
-    // The _REV means it's stored in little-endian order on the machine.
+    // Expand 5-bit component to 8-bit by bit replication to fill range [0,255] accurately.
+#define EXPAND_5_TO_8(v) (uint8_t)(((v) << 3) | ((v) >> 2))
     uint8_t *dst = (uint8_t*)malloc(width * height * 4);
     if (!dst) return NULL;
 
@@ -1441,15 +1441,21 @@ void *bridge_ConvertBGRA1555toRGBA8(const void *src, int width, int height)
     uint8_t *d = dst;
     for (int i = 0; i < width * height; i++) {
         uint16_t p = s[i];
-        // GL_UNSIGNED_SHORT_1_5_5_5_REV: A=bit15, R=bits14-10, G=bits9-5, B=bits4-0
-        uint8_t b = (uint8_t)((p & 0x001F) << 3);       // B bits 4-0
-        uint8_t g = (uint8_t)(((p >> 5)  & 0x1F) << 3); // G bits 9-5
-        uint8_t r = (uint8_t)(((p >> 10) & 0x1F) << 3); // R bits 14-10
-        uint8_t a = (uint8_t)(((p >> 15) & 0x01) * 255); // A bit 15
-        d[0] = r; d[1] = g; d[2] = b; d[3] = a;
+        // GL_BGRA + GL_UNSIGNED_SHORT_1_5_5_5_REV layout (little-endian after byteswap):
+        // bits 4-0: B, bits 9-5: G, bits 14-10: R, bit 15: A
+        uint8_t b5 = (uint8_t)(p & 0x001F);
+        uint8_t g5 = (uint8_t)((p >> 5)  & 0x1F);
+        uint8_t r5 = (uint8_t)((p >> 10) & 0x1F);
+        uint8_t a1 = (uint8_t)((p >> 15) & 0x01);
+        // Scale 5-bit to 8-bit: replicate top bits into bottom bits for accurate range [0,255]
+        d[0] = EXPAND_5_TO_8(r5);
+        d[1] = EXPAND_5_TO_8(g5);
+        d[2] = EXPAND_5_TO_8(b5);
+        d[3] = a1 ? 255 : 0;
         d += 4;
     }
     return dst;
+#undef EXPAND_5_TO_8
 }
 
 void bridge_FreeConvertedPixels(void *ptr)
