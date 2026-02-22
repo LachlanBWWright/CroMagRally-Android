@@ -807,9 +807,17 @@ void bridge_Lightfv(GLenum light, GLenum pname, const GLfloat* params) {
     int idx = (int)(light - 0x4000); // GL_LIGHT0 = 0x4000
     if (idx < 0 || idx >= MAX_LIGHTS) return;
     switch (pname) {
-        case 0x1203: // GL_POSITION
-            memcpy(gBridge.lights[idx].pos, params, 4*sizeof(float));
+        case 0x1203: { // GL_POSITION: transform by current modelview (like desktop GL)
+            int top = gBridge.mv.top;
+            if (top < 0 || top >= MATRIX_STACK_DEPTH) { memcpy(gBridge.lights[idx].pos, params, 4*sizeof(float)); break; }
+            const float *mv = gBridge.mv.stack[top];
+            float x = params[0], y = params[1], z = params[2], w = params[3];
+            gBridge.lights[idx].pos[0] = mv[0]*x + mv[4]*y + mv[8]*z  + mv[12]*w;
+            gBridge.lights[idx].pos[1] = mv[1]*x + mv[5]*y + mv[9]*z  + mv[13]*w;
+            gBridge.lights[idx].pos[2] = mv[2]*x + mv[6]*y + mv[10]*z + mv[14]*w;
+            gBridge.lights[idx].pos[3] = mv[3]*x + mv[7]*y + mv[11]*z + mv[15]*w;
             break;
+        }
         case 0x1201: // GL_DIFFUSE
             memcpy(gBridge.lights[idx].diffuse, params, 4*sizeof(float));
             break;
