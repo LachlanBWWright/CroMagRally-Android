@@ -360,7 +360,6 @@ static float gCurTexCoord[2] = {0,0};
 // VAO/VBO for streaming draws
 static GLuint gStreamVAO      = 0;
 static GLuint gStreamVBO      = 0;
-static GLuint gStreamIBO      = 0;
 
 // Separate VAO for vertex-array draws (client state)
 static GLuint gArrayVAO       = 0;
@@ -571,7 +570,6 @@ void bridge_Init(void)
     // Create streaming VAO/VBO for immediate mode
     glGenVertexArrays(1, &gStreamVAO);
     glGenBuffers(1, &gStreamVBO);
-    glGenBuffers(1, &gStreamIBO);
 
     // Create vertex array VAO/VBO for client-state draws
     glGenVertexArrays(1, &gArrayVAO);
@@ -589,7 +587,6 @@ void bridge_Shutdown(void)
     if (gProgram) { glDeleteProgram(gProgram); gProgram = 0; }
     if (gStreamVAO) { glDeleteVertexArrays(1, &gStreamVAO); gStreamVAO = 0; }
     if (gStreamVBO) { glDeleteBuffers(1, &gStreamVBO); gStreamVBO = 0; }
-    if (gStreamIBO) { glDeleteBuffers(1, &gStreamIBO); gStreamIBO = 0; }
     if (gArrayVAO) { glDeleteVertexArrays(1, &gArrayVAO); gArrayVAO = 0; }
     if (gArrayVBO) { glDeleteBuffers(1, &gArrayVBO); gArrayVBO = 0; }
     if (gArrayIBO) { glDeleteBuffers(1, &gArrayIBO); gArrayIBO = 0; }

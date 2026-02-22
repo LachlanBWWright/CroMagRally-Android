@@ -987,6 +987,28 @@ GLuint	textureName;
 			dataType    = GL_UNSIGNED_BYTE;
 		}
 	}
+	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
+	{
+		// GLES3 doesn't support GL_BGRA with GL_UNSIGNED_BYTE in all drivers.
+		// Convert BGRA → RGBA in-place by swapping R and B channels.
+		int numPixels = width * height;
+		uint8_t *pixels = (uint8_t *)imageMemory;
+		convertedPixels = SDL_malloc(numPixels * 4);
+		if (convertedPixels)
+		{
+			uint8_t *dst = (uint8_t *)convertedPixels;
+			for (int i = 0; i < numPixels; i++)
+			{
+				dst[i*4+0] = pixels[i*4+2];  // R ← B
+				dst[i*4+1] = pixels[i*4+1];  // G
+				dst[i*4+2] = pixels[i*4+0];  // B ← R
+				dst[i*4+3] = pixels[i*4+3];  // A
+			}
+			imageMemory = convertedPixels;
+			srcFormat   = GL_RGBA;
+			destFormat  = GL_RGBA;
+		}
+	}
 #endif
 
 	glTexImage2D(GL_TEXTURE_2D,

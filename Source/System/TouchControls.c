@@ -42,6 +42,9 @@ extern SDL_Window *gSDLWindow;
 #define BTN_TOGGLE_GYRO_Y 0.08f
 #define BTN_RADIUS   0.055f    // button radius (fraction of screen height)
 
+// Touch hit areas are 30% larger than visual size for better touch feel
+#define HIT_AREA_SCALE_FACTOR  1.3f
+
 // Touch IDs
 #define MAX_FINGERS 10
 
@@ -370,7 +373,7 @@ static bool HitButton(float touchNX, float touchNY,
     float tx, ty, bx, by;
     NormToPixel(touchNX, touchNY, &tx, &ty);
     NormToPixel(btnNX, btnNY, &bx, &by);
-    return Dist2D(tx, ty, bx, by) < rPixels * 1.3f;  // 30% larger hit area
+    return Dist2D(tx, ty, bx, by) < rPixels * HIT_AREA_SCALE_FACTOR;  // larger hit area
 }
 
 // Hit test joystick region
