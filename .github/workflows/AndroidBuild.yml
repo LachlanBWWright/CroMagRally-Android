@@ -39,17 +39,10 @@ jobs:
           cp extern/SDL/android-project/app/src/main/java/org/libsdl/app/*.java \
              android/app/src/main/java/org/libsdl/app/
 
-      - name: Install Android NDK and CMake
+      - name: Install Android NDK
         run: |
-          # Use sdkmanager from the pre-installed Android SDK on ubuntu-latest
-          yes | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager \
-            "ndk;27.3.13750724" \
-            "cmake;3.22.1" \
-            --sdk_root=${ANDROID_SDK_ROOT} 2>/dev/null || \
-          sdkmanager \
-            "ndk;27.3.13750724" \
-            "cmake;3.22.1" 2>/dev/null || true
-          # Set NDK_HOME for Gradle
+          ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;27.3.13750724" 2>/dev/null || true
           echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/27.3.13750724" >> $GITHUB_ENV
           echo "ANDROID_NDK=${ANDROID_SDK_ROOT}/ndk/27.3.13750724" >> $GITHUB_ENV
 
@@ -62,7 +55,7 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --info
+        run: ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

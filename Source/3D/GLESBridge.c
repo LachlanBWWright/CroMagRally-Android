@@ -14,6 +14,116 @@
 
 #include "gles_bridge.h"
 
+// Fixed-function GL enums not present in GLES3/gl3.h
+#ifndef GL_MODELVIEW
+#define GL_MODELVIEW            0x1700
+#endif
+#ifndef GL_PROJECTION
+#define GL_PROJECTION           0x1701
+#endif
+#ifndef GL_TEXTURE
+#define GL_TEXTURE              0x1702
+#endif
+#ifndef GL_LIGHTING
+#define GL_LIGHTING             0x0B50
+#endif
+#ifndef GL_LIGHT0
+#define GL_LIGHT0               0x4000
+#endif
+#ifndef GL_LIGHT1
+#define GL_LIGHT1               0x4001
+#endif
+#ifndef GL_LIGHT2
+#define GL_LIGHT2               0x4002
+#endif
+#ifndef GL_LIGHT3
+#define GL_LIGHT3               0x4003
+#endif
+#ifndef GL_AMBIENT
+#define GL_AMBIENT              0x1200
+#endif
+#ifndef GL_DIFFUSE
+#define GL_DIFFUSE              0x1201
+#endif
+#ifndef GL_SPECULAR
+#define GL_SPECULAR             0x1202
+#endif
+#ifndef GL_POSITION
+#define GL_POSITION             0x1203
+#endif
+#ifndef GL_EMISSION
+#define GL_EMISSION             0x1600
+#endif
+#ifndef GL_AMBIENT_AND_DIFFUSE
+#define GL_AMBIENT_AND_DIFFUSE  0x1602
+#endif
+#ifndef GL_LIGHT_MODEL_AMBIENT
+#define GL_LIGHT_MODEL_AMBIENT  0x0B53
+#endif
+#ifndef GL_COLOR_MATERIAL
+#define GL_COLOR_MATERIAL       0x0B57
+#endif
+#ifndef GL_NORMALIZE
+#define GL_NORMALIZE            0x0BA1
+#endif
+#ifndef GL_FOG
+#define GL_FOG                  0x0B60
+#endif
+#ifndef GL_FOG_MODE
+#define GL_FOG_MODE             0x0B65
+#endif
+#ifndef GL_FOG_DENSITY
+#define GL_FOG_DENSITY          0x0B62
+#endif
+#ifndef GL_FOG_START
+#define GL_FOG_START            0x0B63
+#endif
+#ifndef GL_FOG_END
+#define GL_FOG_END              0x0B64
+#endif
+#ifndef GL_FOG_COLOR
+#define GL_FOG_COLOR            0x0B66
+#endif
+#ifndef GL_EXP
+#define GL_EXP                  0x0800
+#endif
+#ifndef GL_EXP2
+#define GL_EXP2                 0x0801
+#endif
+#ifndef GL_ALPHA_TEST
+#define GL_ALPHA_TEST           0x0BC0
+#endif
+#ifndef GL_QUADS
+#define GL_QUADS                0x0007
+#endif
+#ifndef GL_QUAD_STRIP
+#define GL_QUAD_STRIP           0x0008
+#endif
+#ifndef GL_POLYGON
+#define GL_POLYGON              0x0009
+#endif
+#ifndef GL_VERTEX_ARRAY
+#define GL_VERTEX_ARRAY         0x8074
+#endif
+#ifndef GL_NORMAL_ARRAY
+#define GL_NORMAL_ARRAY         0x8075
+#endif
+#ifndef GL_COLOR_ARRAY
+#define GL_COLOR_ARRAY          0x8076
+#endif
+#ifndef GL_TEXTURE_COORD_ARRAY
+#define GL_TEXTURE_COORD_ARRAY  0x8078
+#endif
+#ifndef GL_CURRENT_COLOR
+#define GL_CURRENT_COLOR        0x0B00
+#endif
+#ifndef GL_BGRA
+#define GL_BGRA                 0x80E1
+#endif
+#ifndef GL_UNSIGNED_SHORT_1_5_5_5_REV
+#define GL_UNSIGNED_SHORT_1_5_5_5_REV  0x8366
+#endif
+
 #define LOG_TAG "GLESBridge"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN,  LOG_TAG, __VA_ARGS__)
@@ -708,7 +818,8 @@ static void FlushImmediate(GLenum prim, BridgeVertex *verts, int n)
     BridgeVertex *drawVerts = verts;
     BridgeVertex *tmpVerts = NULL;
 
-    if (prim == 0x0007 /*GL_QUADS*/) {
+    if (prim == GL_QUADS) {
+        // Convert GL_QUADS (4 verts each) to GL_TRIANGLES (6 verts each)
         int numQuads = n / 4;
         drawCount = numQuads * 6;
         tmpVerts = (BridgeVertex*)malloc(drawCount * sizeof(BridgeVertex));
@@ -722,6 +833,27 @@ static void FlushImmediate(GLenum prim, BridgeVertex *verts, int n)
         }
         drawVerts = tmpVerts;
         prim = GL_TRIANGLES;
+    } else if (prim == GL_QUAD_STRIP) {
+        // Convert GL_QUAD_STRIP to GL_TRIANGLES
+        // QUAD_STRIP pairs: (v0,v1,v2,v3), (v2,v3,v4,v5), ...
+        // Each pair of 2 new verts adds a quad: [i, i+1, i+3, i, i+3, i+2]
+        int numStrips = (n - 2) / 2;
+        drawCount = numStrips * 6;
+        tmpVerts = (BridgeVertex*)malloc(drawCount * sizeof(BridgeVertex));
+        for (int s = 0; s < numStrips; s++) {
+            int i = s * 2;
+            tmpVerts[s*6+0] = verts[i+0];
+            tmpVerts[s*6+1] = verts[i+1];
+            tmpVerts[s*6+2] = verts[i+3];
+            tmpVerts[s*6+3] = verts[i+0];
+            tmpVerts[s*6+4] = verts[i+3];
+            tmpVerts[s*6+5] = verts[i+2];
+        }
+        drawVerts = tmpVerts;
+        prim = GL_TRIANGLES;
+    } else if (prim == GL_POLYGON) {
+        // Convert GL_POLYGON (convex) to GL_TRIANGLE_FAN
+        prim = GL_TRIANGLE_FAN;
     }
 
     // Upload to VBO

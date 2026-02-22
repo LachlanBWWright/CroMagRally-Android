@@ -166,7 +166,7 @@ static void Boot(int argc, char** argv)
 		const char *internalPath = SDL_GetAndroidInternalStoragePath();
 		if (internalPath)
 		{
-			SDL_setenv("HOME", internalPath, 1);
+			SDL_setenv_unsafe("HOME", internalPath, 1);
 			// Create ~/.config directory for prefs
 			std::error_code ec;
 			fs::create_directories(std::string(internalPath) + "/.config", ec);
