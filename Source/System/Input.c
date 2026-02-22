@@ -406,6 +406,12 @@ Boolean GetNeedState(int needID, int playerID)
 
 Boolean GetNeedStateAnyP(int needID)
 {
+#ifdef __ANDROID__
+	// Check touch controls for player 0
+	if (TouchControls_IsNeedPressed(needID))
+		return true;
+#endif
+
 	for (int i = 0; i < MAX_LOCAL_PLAYERS; i++)
 	{
 		if (gGamepads[i].open
@@ -450,6 +456,12 @@ Boolean GetNewNeedState(int needID, int playerID)
 
 Boolean GetNewNeedStateAnyP(int needID)
 {
+#ifdef __ANDROID__
+	// Check touch controls for player 0
+	if (TouchControls_IsNeedPressedNew(needID))
+		return true;
+#endif
+
 	for (int i = 0; i < MAX_LOCAL_PLAYERS; i++)
 	{
 		if (gGamepads[i].open

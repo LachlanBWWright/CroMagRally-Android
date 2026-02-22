@@ -1363,7 +1363,7 @@ static void NavigateMenu(void)
 	}
 	else
 	{
-//		NavigateSettingEntriesMouseHover();
+		NavigateSettingEntriesMouseHover();
 	}
 
 	const MenuItem* entry = &gNav->menu[gNav->menuRow];

@@ -52,6 +52,12 @@ void TouchControls_Draw(void);
 void TouchControls_SetSteeringMode(SteeringMode mode);
 SteeringMode TouchControls_GetSteeringMode(void);
 
+// Set whether we are currently in gameplay (true) or a menu screen (false).
+// In game mode: joystick + game action buttons are shown.
+// In menu mode: navigation buttons (UIUp/Down/Confirm/Back) are shown.
+void TouchControls_SetGameMode(bool inGame);
+bool TouchControls_GetGameMode(void);
+
 #else
 // Stubs for non-Android builds
 static inline void TouchControls_Init(void) {}
@@ -66,4 +72,6 @@ static inline void TouchControls_Draw(void) {}
 typedef int SteeringMode;
 static inline void TouchControls_SetSteeringMode(SteeringMode m) { (void)m; }
 static inline SteeringMode TouchControls_GetSteeringMode(void) { return 0; }
+static inline void TouchControls_SetGameMode(bool b) { (void)b; }
+static inline bool TouchControls_GetGameMode(void) { return false; }
 #endif

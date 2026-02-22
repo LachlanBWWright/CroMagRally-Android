@@ -37,25 +37,39 @@
 #define JOYSTICK_RADIUS     0.10f
 #define JOYSTICK_DEAD_ZONE  0.15f
 
-// Buttons (right side) - 5 action buttons in 2 rows
-// Row 1: ThrowForward, Forward, ThrowBackward
-// Row 2: Brakes, Backward
+// Game buttons (right side) - 8 action buttons in 2 rows
 #define BTN_RADIUS          0.055f
-#define BTN_RIGHT_COL3_X    0.91f
-#define BTN_RIGHT_COL2_X    0.82f
-#define BTN_RIGHT_COL1_X    0.73f
+#define BTN_RIGHT_COL4_X    0.93f
+#define BTN_RIGHT_COL3_X    0.84f
+#define BTN_RIGHT_COL2_X    0.75f
+#define BTN_RIGHT_COL1_X    0.66f
 #define BTN_ROW1_Y          0.70f
 #define BTN_ROW2_Y          0.88f
+
+// Menu navigation buttons (right side of screen)
+#define MENU_BTN_RADIUS     0.065f
+#define MENU_NAV_X          0.88f    // X center for up/down arrows
+#define MENU_UP_Y           0.45f    // Y for UIUp
+#define MENU_DOWN_Y         0.62f    // Y for UIDown
+#define MENU_CONFIRM_X      0.75f    // X for confirm
+#define MENU_CONFIRM_Y      0.53f    // Y for confirm
+#define MENU_BACK_X         0.06f    // X for UIBack (top-left, same as pause)
+#define MENU_BACK_Y         0.08f    // Y for UIBack
 
 // Gyro recenter button (top-center)
 #define GYRO_BTN_X          0.50f
 #define GYRO_BTN_Y          0.06f
 #define GYRO_BTN_RADIUS     0.04f
 
-// Steering mode toggle button (top-right)
-#define MODE_BTN_X          0.93f
-#define MODE_BTN_Y          0.06f
+// Steering mode toggle button (above joystick area)
+#define MODE_BTN_X          0.12f
+#define MODE_BTN_Y          0.10f
 #define MODE_BTN_RADIUS     0.04f
+
+// Max buttons in each mode
+#define MAX_GAME_BUTTONS    8
+#define MAX_MENU_BUTTONS    4
+#define MAX_BUTTONS         8
 
 // ============================================================
 // BUTTON DEFINITIONS
@@ -83,9 +97,18 @@ static struct
     int         joyFingerID;        // which finger is on joystick (-1 = none)
     bool        joyActive;
 
-    // Buttons
-    TouchButton buttons[7];
+    // Buttons: separate sets for game and menu modes
+    TouchButton gameButtons[MAX_GAME_BUTTONS];
+    int         numGameButtons;
+    TouchButton menuButtons[MAX_MENU_BUTTONS];
+    int         numMenuButtons;
+
+    // Currently active button set (points to either gameButtons or menuButtons)
+    TouchButton* buttons;
     int         numButtons;
+
+    // Game mode flag
+    bool        inGame;
 
     // Gyroscope
     SDL_Sensor* gyroSensor;
@@ -146,24 +169,35 @@ void TouchControls_Init(void)
     gTC.gyroRecenterCY = GYRO_BTN_Y;
     gTC.gyroRecenterR  = GYRO_BTN_RADIUS;
 
-    // Mode toggle button
+    // Mode toggle button (joystick/gyro switch)
     gTC.modeBtnCX = MODE_BTN_X;
     gTC.modeBtnCY = MODE_BTN_Y;
     gTC.modeBtnR  = MODE_BTN_RADIUS;
 
-    // Action buttons
-    gTC.numButtons = 7;
+    // ---- Game action buttons (all in-game controls) ----
+    // Row 1: ThrowForward, ThrowBackward, CameraMode, RearView
+    gTC.gameButtons[0] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowForward,  -1, false, false };
+    gTC.gameButtons[1] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowBackward, -1, false, false };
+    gTC.gameButtons[2] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_CameraMode,    -1, false, false };
+    gTC.gameButtons[3] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_RearView,      -1, false, false };
+    // Row 2: Forward, Backward, Brakes, Pause
+    gTC.gameButtons[4] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Forward,       -1, false, false };
+    gTC.gameButtons[5] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Backward,      -1, false, false };
+    gTC.gameButtons[6] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Brakes,        -1, false, false };
+    gTC.gameButtons[7] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_UIPause,       -1, false, false };
+    gTC.numGameButtons = 8;
 
-    // Row 1: ThrowForward, ThrowBackward, CameraMode
-    gTC.buttons[0] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowForward,  -1, false, false };
-    gTC.buttons[1] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowBackward, -1, false, false };
-    gTC.buttons[2] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_CameraMode,    -1, false, false };
-    // Row 2: Forward, Brakes, RearView
-    gTC.buttons[3] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Forward,       -1, false, false };
-    gTC.buttons[4] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Brakes,        -1, false, false };
-    gTC.buttons[5] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_RearView,      -1, false, false };
-    // Pause button (top right side)
-    gTC.buttons[6] = (TouchButton){ 0.06f, 0.06f, 0.04f, kNeed_UIPause, -1, false, false };
+    // ---- Menu navigation buttons ----
+    gTC.menuButtons[0] = (TouchButton){ MENU_NAV_X,     MENU_UP_Y,      MENU_BTN_RADIUS, kNeed_UIUp,      -1, false, false };
+    gTC.menuButtons[1] = (TouchButton){ MENU_CONFIRM_X, MENU_CONFIRM_Y, MENU_BTN_RADIUS, kNeed_UIConfirm, -1, false, false };
+    gTC.menuButtons[2] = (TouchButton){ MENU_NAV_X,     MENU_DOWN_Y,    MENU_BTN_RADIUS, kNeed_UIDown,    -1, false, false };
+    gTC.menuButtons[3] = (TouchButton){ MENU_BACK_X,    MENU_BACK_Y,    MENU_BTN_RADIUS, kNeed_UIBack,    -1, false, false };
+    gTC.numMenuButtons = 4;
+
+    // Default to menu mode; will be switched to game mode when gameplay starts
+    gTC.inGame = false;
+    gTC.buttons = gTC.menuButtons;
+    gTC.numButtons = gTC.numMenuButtons;
 
     // Try to open gyroscope
     int numSensors = 0;
@@ -485,6 +519,32 @@ SteeringMode TouchControls_GetSteeringMode(void)
     return gTC.steeringMode;
 }
 
+void TouchControls_SetGameMode(bool inGame)
+{
+    gTC.inGame = inGame;
+    // Release all buttons on mode switch to avoid stuck inputs
+    for (int i = 0; i < gTC.numGameButtons; i++)
+        gTC.gameButtons[i].pressed = gTC.gameButtons[i].wasPressed = false;
+    for (int i = 0; i < gTC.numMenuButtons; i++)
+        gTC.menuButtons[i].pressed = gTC.menuButtons[i].wasPressed = false;
+    if (inGame)
+    {
+        gTC.buttons = gTC.gameButtons;
+        gTC.numButtons = gTC.numGameButtons;
+    }
+    else
+    {
+        gTC.buttons = gTC.menuButtons;
+        gTC.numButtons = gTC.numMenuButtons;
+    }
+    TC_LOG("TouchControls mode: %s", inGame ? "game" : "menu");
+}
+
+bool TouchControls_GetGameMode(void)
+{
+    return gTC.inGame;
+}
+
 // ============================================================
 // DRAWING
 // ============================================================
@@ -659,63 +719,89 @@ void TouchControls_Draw(void)
     glBindVertexArray(vao);
 
     float ar = (gTC.screenH > 0) ? (float)gTC.screenW / (float)gTC.screenH : 1.0f;
-    // rx = horizontal joystick radius in [0..1] coords
-    // The vertical radius for aspect-correct hit-testing is rx*ar (same physical size)
     float rx = JOYSTICK_RADIUS;
-    float ry_hit = JOYSTICK_RADIUS * ar; // vertical hit radius (for aspect-correct movement)
+    float ry_hit = JOYSTICK_RADIUS * ar;
 
-    // ---- Draw joystick (always visible) ----
-    float jcx = gTC.joyActive ? gTC.joyCX : JOYSTICK_CENTER_X;
-    float jcy = gTC.joyActive ? gTC.joyCY : JOYSTICK_CENTER_Y;
-
-    // Background circle
-    TC_SetColor(0.3f, 0.3f, 0.3f, 0.15f);
-    DrawCircleFilled(jcx, jcy, rx, 32);
-
-    // Outline
-    TC_SetColor(0.7f, 0.7f, 0.7f, 0.4f);
-    DrawCircleOutline(jcx, jcy, rx, 32);
-
-    // Thumb
-    if (gTC.steeringMode == kSteeringMode_Joystick)
+    if (gTC.inGame)
     {
-        float tx = jcx + gTC.joyDX * rx;
-        float ty = jcy + gTC.joyDY * ry_hit;
-        TC_SetColor(0.5f, 0.7f, 1.0f, 0.5f);
-        DrawCircleFilled(tx, ty, rx * 0.4f, 16);
-        TC_SetColor(0.8f, 0.9f, 1.0f, 0.6f);
-        DrawCircleOutline(tx, ty, rx * 0.4f, 16);
+        // ---- Draw joystick (game mode only) ----
+        float jcx = gTC.joyActive ? gTC.joyCX : JOYSTICK_CENTER_X;
+        float jcy = gTC.joyActive ? gTC.joyCY : JOYSTICK_CENTER_Y;
+
+        TC_SetColor(0.3f, 0.3f, 0.3f, 0.15f);
+        DrawCircleFilled(jcx, jcy, rx, 32);
+        TC_SetColor(0.7f, 0.7f, 0.7f, 0.4f);
+        DrawCircleOutline(jcx, jcy, rx, 32);
+
+        if (gTC.steeringMode == kSteeringMode_Joystick)
+        {
+            float tx = jcx + gTC.joyDX * rx;
+            float ty = jcy + gTC.joyDY * ry_hit;
+            TC_SetColor(0.5f, 0.7f, 1.0f, 0.5f);
+            DrawCircleFilled(tx, ty, rx * 0.4f, 16);
+            TC_SetColor(0.8f, 0.9f, 1.0f, 0.6f);
+            DrawCircleOutline(tx, ty, rx * 0.4f, 16);
+        }
+
+        // ---- Draw game action buttons ----
+        for (int i = 0; i < gTC.numButtons; i++)
+        {
+            TouchButton* btn = &gTC.buttons[i];
+            if (btn->pressed)
+                TC_SetColor(0.6f, 0.8f, 1.0f, 0.5f);
+            else
+                TC_SetColor(0.3f, 0.3f, 0.3f, 0.2f);
+            DrawCircleFilled(btn->cx, btn->cy, btn->radius, 24);
+            TC_SetColor(0.7f, 0.7f, 0.7f, 0.5f);
+            DrawCircleOutline(btn->cx, btn->cy, btn->radius, 24);
+        }
+
+        // ---- Draw mode toggle button (joystick/gyro) ----
+        {
+            bool isGyro = (gTC.steeringMode == kSteeringMode_Gyroscope);
+            TC_SetColor(isGyro ? 0.2f : 0.5f, isGyro ? 0.8f : 0.5f, isGyro ? 0.2f : 0.5f, 0.35f);
+            DrawCircleFilled(gTC.modeBtnCX, gTC.modeBtnCY, gTC.modeBtnR, 20);
+            TC_SetColor(0.8f, 0.8f, 0.8f, 0.5f);
+            DrawCircleOutline(gTC.modeBtnCX, gTC.modeBtnCY, gTC.modeBtnR, 20);
+        }
+
+        // ---- Draw gyro recenter button (only in gyro mode) ----
+        if (gTC.steeringMode == kSteeringMode_Gyroscope && gTC.gyroSensor)
+        {
+            TC_SetColor(0.2f, 0.6f, 1.0f, 0.4f);
+            DrawCircleFilled(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
+            TC_SetColor(0.8f, 0.9f, 1.0f, 0.6f);
+            DrawCircleOutline(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
+        }
     }
-
-    // ---- Draw action buttons ----
-    for (int i = 0; i < gTC.numButtons; i++)
+    else
     {
-        TouchButton* btn = &gTC.buttons[i];
-        if (btn->pressed)
-            TC_SetColor(0.6f, 0.8f, 1.0f, 0.5f);
-        else
-            TC_SetColor(0.3f, 0.3f, 0.3f, 0.2f);
-        DrawCircleFilled(btn->cx, btn->cy, btn->radius, 24);
-        TC_SetColor(0.7f, 0.7f, 0.7f, 0.5f);
-        DrawCircleOutline(btn->cx, btn->cy, btn->radius, 24);
-    }
-
-    // ---- Draw mode toggle button ----
-    {
-        bool isGyro = (gTC.steeringMode == kSteeringMode_Gyroscope);
-        TC_SetColor(isGyro ? 0.2f : 0.5f, isGyro ? 0.8f : 0.5f, isGyro ? 0.2f : 0.5f, 0.35f);
-        DrawCircleFilled(gTC.modeBtnCX, gTC.modeBtnCY, gTC.modeBtnR, 20);
-        TC_SetColor(0.8f, 0.8f, 0.8f, 0.5f);
-        DrawCircleOutline(gTC.modeBtnCX, gTC.modeBtnCY, gTC.modeBtnR, 20);
-    }
-
-    // ---- Draw gyro recenter button (only in gyro mode) ----
-    if (gTC.steeringMode == kSteeringMode_Gyroscope && gTC.gyroSensor)
-    {
-        TC_SetColor(0.2f, 0.6f, 1.0f, 0.4f);
-        DrawCircleFilled(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
-        TC_SetColor(0.8f, 0.9f, 1.0f, 0.6f);
-        DrawCircleOutline(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
+        // ---- Menu navigation buttons ----
+        // Use distinct colors to hint purpose:
+        //   UIUp    = green-ish (top circle)
+        //   UIDown  = red-ish   (bottom circle)
+        //   Confirm = blue-ish  (middle circle)
+        //   UIBack  = grey      (corner circle)
+        float menuColors[4][4] = {
+            {0.2f, 0.8f, 0.3f, 0.45f},  // [0] UIUp    = green
+            {0.3f, 0.5f, 1.0f, 0.45f},  // [1] UIConfirm = blue
+            {0.9f, 0.3f, 0.2f, 0.45f},  // [2] UIDown   = red
+            {0.5f, 0.5f, 0.5f, 0.40f},  // [3] UIBack   = grey
+        };
+        for (int i = 0; i < gTC.numMenuButtons; i++)
+        {
+            TouchButton* btn = &gTC.menuButtons[i];
+            float* c = menuColors[i];
+            if (btn->pressed)
+                TC_SetColor(c[0]*1.4f > 1.f ? 1.f : c[0]*1.4f,
+                            c[1]*1.4f > 1.f ? 1.f : c[1]*1.4f,
+                            c[2]*1.4f > 1.f ? 1.f : c[2]*1.4f, 0.7f);
+            else
+                TC_SetColor(c[0], c[1], c[2], c[3]);
+            DrawCircleFilled(btn->cx, btn->cy, btn->radius, 24);
+            TC_SetColor(c[0], c[1], c[2], 0.7f);
+            DrawCircleOutline(btn->cx, btn->cy, btn->radius, 24);
+        }
     }
 
     // Restore state

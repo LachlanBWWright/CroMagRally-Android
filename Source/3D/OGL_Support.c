@@ -667,6 +667,7 @@ void OGL_DrawScene(void (*drawRoutine)(void))
 
            /* DRAW TOUCH CONTROLS OVERLAY ON ANDROID */
 #ifdef __ANDROID__
+	TouchControls_SetGameMode((bool)gIsInGame);
 	TouchControls_Draw();
 #endif
 
