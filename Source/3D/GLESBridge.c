@@ -7,7 +7,6 @@
 #include <GLES3/gl3.h>
 #include <android/log.h>
 #include <string.h>
-#include <stdlib.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -1295,23 +1294,27 @@ void bridge_DrawElements(GLenum mode, GLsizei count, GLenum type, const void* in
         for (int i = 0; i < count; i++) if (idx[i] > maxIndex) maxIndex = idx[i];
     }
 
-    // Convert non-uint16 index types to uint16 before drawing
-    // (Our bridge packs vertices to a uint16 IBO so we must convert here.)
+    // Convert non-uint16 index types to uint16 before drawing.
+    // Reuse the static convertedIndices buffer (MAX_IMM_INDICES entries) to avoid
+    // per-draw allocation; if the count is too large, clamp and warn.
     if (type == GL_UNSIGNED_INT && count > 0) {
-        // Use heap allocation for safety with large index counts
-        uint16_t* idx16 = (uint16_t*) malloc(count * sizeof(uint16_t));
-        if (!idx16) { BRIDGE_ERR("OOM converting uint32 indices"); return; }
+        if (count > MAX_IMM_INDICES) {
+            BRIDGE_ERR("DrawElements: index count %d exceeds MAX_IMM_INDICES %d, clamping", count, MAX_IMM_INDICES);
+            count = MAX_IMM_INDICES;
+        }
+        uint16_t* idx16 = gBridge.convertedIndices;
         const uint32_t* idx32 = (const uint32_t*)indices;
         for (int i = 0; i < count; i++) idx16[i] = (uint16_t)idx32[i];
         DrawVertexArrays(mode, maxIndex + 1, GL_UNSIGNED_SHORT, idx16, count);
-        free(idx16);
     } else if (type == GL_UNSIGNED_BYTE && count > 0) {
-        uint16_t* idx16 = (uint16_t*) malloc(count * sizeof(uint16_t));
-        if (!idx16) { BRIDGE_ERR("OOM converting uint8 indices"); return; }
+        if (count > MAX_IMM_INDICES) {
+            BRIDGE_ERR("DrawElements: index count %d exceeds MAX_IMM_INDICES %d, clamping", count, MAX_IMM_INDICES);
+            count = MAX_IMM_INDICES;
+        }
+        uint16_t* idx16 = gBridge.convertedIndices;
         const uint8_t* idx8 = (const uint8_t*)indices;
         for (int i = 0; i < count; i++) idx16[i] = (uint16_t)idx8[i];
         DrawVertexArrays(mode, maxIndex + 1, GL_UNSIGNED_SHORT, idx16, count);
-        free(idx16);
     } else {
         DrawVertexArrays(mode, maxIndex + 1, type, indices, count);
     }
