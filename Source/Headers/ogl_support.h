@@ -5,7 +5,11 @@
 #pragma once
 
 #include "main.h"
+#ifdef __ANDROID__
+#include "gles_compat.h"
+#else
 #include <SDL3/SDL_opengl.h>
+#endif
 
 #define MAX_SPLITSCREENS	MAX_LOCAL_PLAYERS
 #define MAX_VIEWPORTS		(1+MAX_SPLITSCREENS)
