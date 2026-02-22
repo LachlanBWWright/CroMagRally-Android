@@ -68,7 +68,7 @@
 
 // Max buttons in each mode
 #define MAX_GAME_BUTTONS    8
-#define MAX_MENU_BUTTONS    4
+#define MAX_MENU_BUTTONS    5
 #define MAX_BUTTONS         8
 
 // ============================================================
@@ -192,7 +192,8 @@ void TouchControls_Init(void)
     gTC.menuButtons[1] = (TouchButton){ MENU_CONFIRM_X, MENU_CONFIRM_Y, MENU_BTN_RADIUS, kNeed_UIConfirm, -1, false, false };
     gTC.menuButtons[2] = (TouchButton){ MENU_NAV_X,     MENU_DOWN_Y,    MENU_BTN_RADIUS, kNeed_UIDown,    -1, false, false };
     gTC.menuButtons[3] = (TouchButton){ MENU_BACK_X,    MENU_BACK_Y,    MENU_BTN_RADIUS, kNeed_UIBack,    -1, false, false };
-    gTC.numMenuButtons = 4;
+    gTC.menuButtons[4] = (TouchButton){ 0.93f,          0.08f,          MENU_BTN_RADIUS, kNeed_UIConfirm, -1, false, false }; // Continue/Space (top-right)
+    gTC.numMenuButtons = 5;
 
     // Default to menu mode; will be switched to game mode when gameplay starts
     gTC.inGame = false;
@@ -782,11 +783,13 @@ void TouchControls_Draw(void)
         //   UIDown  = red-ish   (bottom circle)
         //   Confirm = blue-ish  (middle circle)
         //   UIBack  = grey      (corner circle)
-        float menuColors[4][4] = {
+        //   Continue/Space (top-right) = yellow-ish
+        float menuColors[5][4] = {
             {0.2f, 0.8f, 0.3f, 0.45f},  // [0] UIUp    = green
             {0.3f, 0.5f, 1.0f, 0.45f},  // [1] UIConfirm = blue
             {0.9f, 0.3f, 0.2f, 0.45f},  // [2] UIDown   = red
             {0.5f, 0.5f, 0.5f, 0.40f},  // [3] UIBack   = grey
+            {1.0f, 0.9f, 0.1f, 0.50f},  // [4] Continue/Space = yellow
         };
         for (int i = 0; i < gTC.numMenuButtons; i++)
         {

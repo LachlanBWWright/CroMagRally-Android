@@ -164,7 +164,7 @@ typedef struct
 	int					historyPos;
 
 	bool				mouseHoverValid;
-//	int					mouseHoverColumn;
+	int					mouseHoverColumn;
 	SDL_Cursor*			handCursor;
 	SDL_Cursor*			standardCursor;
 
@@ -195,7 +195,7 @@ static void InitMenuNavigation(void)
 	SDL_memcpy(&nav->style, &kDefaultMenuStyle, sizeof(MenuStyle));
 	nav->menuPick = -1;
 	nav->menuState = kMenuStateOff;
-//	nav->mouseHoverColumn = -1;
+	nav->mouseHoverColumn = -1;
 
 	nav->standardCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
 	nav->handCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
@@ -800,19 +800,26 @@ static void NavigateSettingEntriesVertically(int delta)
 	RepositionArrows();
 }
 
-#if 0
 static void NavigateSettingEntriesMouseHover(void)
 {
+#ifndef __ANDROID__
+	// On desktop, only check hover when mouse has moved.
+	// On Android, SDL synthesizes mouse-from-touch so we always check.
 	if (!gMouseMotionNow)
 	{
 		return;
 	}
+#endif
 
-	int mxRaw, myRaw;
+	float mxRaw, myRaw;
 	SDL_GetMouseState(&mxRaw, &myRaw);
 
-	float mx = (mxRaw - gGameWindowWidth/2.0f) * g2DLogicalWidth / gGameWindowWidth;
-	float my = (myRaw - gGameWindowHeight/2.0f) * g2DLogicalHeight / gGameWindowHeight;
+	// Convert pixel coords to centered 2D game coordinates.
+	// Menu items use kProjectionType2DOrthoCentered (origin at center, Y+ downward).
+	float lw = gGameView->panes[GetOverlayPaneNumber()].logicalWidth;
+	float lh = gGameView->panes[GetOverlayPaneNumber()].logicalHeight;
+	float mx = (mxRaw - gGameWindowWidth  / 2.0f) * lw / gGameWindowWidth;
+	float my = (myRaw - gGameWindowHeight / 2.0f) * lh / gGameWindowHeight;
 
 	gNav->mouseHoverValid = false;
 	gNav->mouseHoverColumn = -1;
@@ -828,12 +835,10 @@ static void NavigateSettingEntriesMouseHover(void)
 		fullExtents.top		= fullExtents.left	= 100000;
 		fullExtents.bottom	= fullExtents.right	= -100000;
 
-		for (int col = 0; col < MAX_MENU_COLS; col++)
+		// Iterate chain nodes for this row (col 0 = chain head, col N = chain node)
+		int col = 0;
+		for (ObjNode* textNode = gNav->menuObjects[row]; textNode != NULL; textNode = textNode->ChainNode, col++)
 		{
-			ObjNode* textNode = gNav->menuObjects[row][col];
-			if (!textNode)
-				continue;
-
 			OGLRect extents = TextMesh_GetExtents(textNode);
 			if (extents.top		< fullExtents.top	) fullExtents.top		= extents.top;
 			if (extents.left	< fullExtents.left	) fullExtents.left		= extents.left;
@@ -849,14 +854,18 @@ static void NavigateSettingEntriesMouseHover(void)
 			}
 		}
 
-		if (my >= fullExtents.top &&
+		// Check if touch/cursor is anywhere within the full row extents
+		if (fullExtents.top < 100000 &&
+			my >= fullExtents.top &&
 			my <= fullExtents.bottom &&
 			mx >= fullExtents.left - 10 &&
 			mx <= fullExtents.right + 10)
 		{
 			gNav->mouseHoverValid = true;
 
+#ifndef __ANDROID__
 			SetHandMouseCursor();				// set hand cursor
+#endif
 
 			if (gNav->menuRow != row)
 			{
@@ -870,14 +879,15 @@ static void NavigateSettingEntriesMouseHover(void)
 
 	GAME_ASSERT(!gNav->mouseHoverValid);		// if we got here, we're not hovering over anything
 
+#ifndef __ANDROID__
 	SetStandardMouseCursor();					// restore standard cursor
-}
 #endif
+}
 
 static void NavigatePick(const MenuItem* entry)
 {
 	if (GetNewNeedStateAnyP(kNeed_UIConfirm)
-//			|| (gNav->mouseHoverValid && GetNewClickState(SDL_BUTTON_LEFT))
+			|| (gNav->mouseHoverValid && GetNewClickState(SDL_BUTTON_LEFT))
 			)
 	{
 		PlayConfirmEffect();
@@ -1361,8 +1371,8 @@ static void NavigateMenu(void)
 		NavigateSettingEntriesVertically(1);
 		SaveSelectedRowInHistory();
 	}
-	// Mouse hover navigation is disabled on Android (no mouse).
-	// Navigation is handled via touch controls (UIUp/UIDown buttons above).
+	// Mouse/touch hover navigation: move selection to item under finger/cursor
+	NavigateSettingEntriesMouseHover();
 
 	const MenuItem* entry = &gNav->menu[gNav->menuRow];
 	const MenuItemClass* cls = &kMenuItemClasses[entry->type];

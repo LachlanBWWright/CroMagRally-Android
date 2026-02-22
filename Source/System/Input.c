@@ -547,7 +547,9 @@ Boolean UserWantsOut(void)
 	return GetNewNeedStateAnyP(kNeed_UIConfirm)
 		|| GetNewNeedStateAnyP(kNeed_UIBack)
 		|| GetNewNeedStateAnyP(kNeed_UIPause)
-//		|| GetNewClickState(SDL_BUTTON_LEFT)
+#ifdef __ANDROID__
+		|| GetNewClickState(SDL_BUTTON_LEFT)   // touch tap = any-key on Android
+#endif
         ;
 }
 
