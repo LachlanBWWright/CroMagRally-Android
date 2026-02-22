@@ -71,6 +71,16 @@
 #define MAX_MENU_BUTTONS    5
 #define MAX_BUTTONS         8
 
+// Menu button indices for drawing/icon logic
+#define MENU_BTN_IDX_UP         0
+#define MENU_BTN_IDX_CONFIRM    1
+#define MENU_BTN_IDX_DOWN       2
+#define MENU_BTN_IDX_BACK       3   // Escape/UIBack (top-left)
+#define MENU_BTN_IDX_CONTINUE   4   // Space/UIConfirm (top-right)
+
+// Icon size as fraction of button radius
+#define MENU_ICON_SIZE_RATIO    0.35f
+
 // ============================================================
 // BUTTON DEFINITIONS
 // ============================================================
@@ -608,6 +618,53 @@ static void DrawCircleOutline(float cx, float cy, float r, int segments)
     glDeleteBuffers(1, &vbo);
 }
 
+// Returns the aspect-ratio-corrected Y scaling factor.
+// In [0..1] screen space, x covers the full width but y covers the full height.
+// In landscape (W>H), equal pixel-space radii require ry = rx * W/H.
+static float TC_AspectY(float r)
+{
+    return (gTC.screenH > 0) ? r * (float)gTC.screenW / (float)gTC.screenH : r;
+}
+
+// Draw an 'X' (cross) icon centered at (cx, cy) with half-size s (aspect-corrected)
+static void DrawCrossIcon(float cx, float cy, float s)
+{
+    float ry = TC_AspectY(s);
+    float verts[] = {
+        cx - s, cy - ry,  cx + s, cy + ry,   // diagonal 1
+        cx + s, cy - ry,  cx - s, cy + ry,   // diagonal 2
+    };
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glDrawArrays(GL_LINES, 0, 4);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glDeleteBuffers(1, &vbo);
+}
+
+// Draw a right-pointing triangle (play/continue icon) centered at (cx, cy) with half-size s
+static void DrawPlayIcon(float cx, float cy, float s)
+{
+    float ry = TC_AspectY(s);
+    float verts[] = {
+        cx - s, cy - ry,   // top-left
+        cx + s, cy,        // right apex
+        cx - s, cy + ry,   // bottom-left
+    };
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glDeleteBuffers(1, &vbo);
+}
+
 // Simple 2D shader for drawing touch controls overlay
 static GLuint gTC_Program = 0;
 static GLint gTC_uColor = -1;
@@ -804,6 +861,19 @@ void TouchControls_Draw(void)
             DrawCircleFilled(btn->cx, btn->cy, btn->radius, 24);
             TC_SetColor(c[0], c[1], c[2], 0.7f);
             DrawCircleOutline(btn->cx, btn->cy, btn->radius, 24);
+
+            // Draw icons for UIBack (×) and Continue/Space (▶)
+            if (i == MENU_BTN_IDX_BACK)  // Escape: draw × icon in white
+            {
+                TC_SetColor(1.0f, 1.0f, 1.0f, 0.85f);
+                DrawCrossIcon(btn->cx, btn->cy, btn->radius * MENU_ICON_SIZE_RATIO);
+            }
+            else if (i == MENU_BTN_IDX_CONTINUE)  // Continue/Space: draw ▶ icon
+            {
+                // Dark yellowish-brown provides optimal contrast on the yellow button background
+                TC_SetColor(0.2f, 0.2f, 0.0f, 0.7f);
+                DrawPlayIcon(btn->cx, btn->cy, btn->radius * MENU_ICON_SIZE_RATIO);
+            }
         }
     }
 

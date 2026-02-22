@@ -802,18 +802,19 @@ static void NavigateSettingEntriesVertically(int delta)
 
 static void NavigateSettingEntriesMouseHover(void)
 {
-#ifdef __ANDROID__
-	// On Android, skip hover when directional buttons are being used
-	// to avoid the synthesized mouse position interfering with up/down navigation.
-	if (GetNeedStateAnyP(kNeed_UIUp) || GetNeedStateAnyP(kNeed_UIDown))
-	{
-		gNav->mouseHoverValid = false;
-		return;
-	}
-#else
+#ifndef __ANDROID__
 	// On desktop, only process hover when the mouse has actually moved.
 	if (!gMouseMotionNow)
 	{
+		return;
+	}
+#else  // __ANDROID__
+	// On Android, SDL synthesizes mouse events from touch events, so the mouse position
+	// reflects the last touch location. Skip hover when directional buttons are being used
+	// to avoid the synthesized position interfering with up/down navigation.
+	if (GetNeedStateAnyP(kNeed_UIUp) || GetNeedStateAnyP(kNeed_UIDown))
+	{
+		gNav->mouseHoverValid = false;
 		return;
 	}
 #endif
