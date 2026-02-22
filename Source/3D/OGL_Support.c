@@ -984,6 +984,12 @@ GLuint	textureName;
 #	define GLES_RGB8                      0x8051u  // GL_RGB8
 #	define GLES_SRGB8                     0x8C41u  // GL_SRGB8
 	uint8_t* convertedPixels = NULL;
+	// Remember the original destFormat before any conversions.
+	// If the caller passed GL_RGB (no alpha intended), we must force alpha=255 after
+	// any RGBA conversion to avoid the alpha test discarding all opaque fragments.
+	// On desktop GL, sampling a GL_RGB texture always returns alpha=1.0; we must
+	// reproduce that behaviour on GLES where we promote RGB→RGBA internally.
+	const GLint originalDestFormat = destFormat;
 
 	// --- BGRA: not a core GLES 3.0 format; must convert to RGBA ---
 	if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
@@ -996,7 +1002,8 @@ GLuint	textureName;
 			uint8_t* dst = convertedPixels;
 			for (int i = 0; i < numPixels; i++, src += 4, dst += 4)
 			{
-				dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0]; dst[3] = src[3];
+				dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0];
+				dst[3] = (originalDestFormat == GL_RGB) ? 255 : src[3];
 			}
 			imageMemory = convertedPixels;
 			srcFormat = GL_RGBA;
@@ -1005,21 +1012,33 @@ GLuint	textureName;
 	}
 	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_SHORT_1_5_5_5_REV)
 	{
-		// Convert 16-bit 1_5_5_5_REV packed BGRA to 32-bit RGBA UNSIGNED_BYTE
+		// Convert 16-bit 1_5_5_5_REV packed BGRA to 32-bit RGBA UNSIGNED_BYTE.
+		// GL_UNSIGNED_SHORT_1_5_5_5_REV bit layout (after little-endian byteswap on Android):
+		//   bits  0-4  = B (5 bits, component 0 for BGRA)
+		//   bits  5-9  = G (5 bits, component 1 for BGRA)
+		//   bits 10-14 = R (5 bits, component 2 for BGRA)
+		//   bit  15    = A (1 bit,  component 3 for BGRA)
+		// IMPORTANT: terrain textures are loaded with destFormat=GL_RGB (no alpha), meaning
+		// the 1-bit alpha field in the source data is meaningless / may be 0. Force alpha=255
+		// whenever the original destFormat did not intend to carry alpha information.
 		int numPixels = width * height;
 		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
 		if (convertedPixels)
 		{
 			const uint16_t* src16 = (const uint16_t*) imageMemory;
 			uint8_t* dst = convertedPixels;
+			// Force alpha=255 when destFormat was GL_RGB (opaque, no alpha channel intended).
+			// On desktop GL, sampling a GL_RGB texture always yields alpha=1.0. Reproduce that
+			// here: the 1-bit alpha in xRGB1555 terrain data may be 0 (unused), so never
+			// trust it for textures that were declared opaque.
 			for (int i = 0; i < numPixels; i++, src16++, dst += 4)
 			{
 				uint16_t px = *src16;
-				// 1_5_5_5_REV: bits [14:10]=R [9:5]=G [4:0]=B [15]=A
 				uint8_t b = (uint8_t)((px & 0x001F) << 3);
 				uint8_t g = (uint8_t)(((px >> 5)  & 0x1F) << 3);
 				uint8_t r = (uint8_t)(((px >> 10) & 0x1F) << 3);
-				uint8_t a = (uint8_t)(((px >> 15) & 0x1)  ? 255 : 0);
+				uint8_t a = (originalDestFormat == GL_RGB) ? 255
+				          : (uint8_t)(((px >> 15) & 0x1) ? 255 : 0);
 				dst[0] = r; dst[1] = g; dst[2] = b; dst[3] = a;
 			}
 			imageMemory = convertedPixels;
@@ -1043,7 +1062,7 @@ GLuint	textureName;
 				dst[0] = (uint8_t)((px >> 24) & 0xFF); // R
 				dst[1] = (uint8_t)((px >> 16) & 0xFF); // G
 				dst[2] = (uint8_t)((px >>  8) & 0xFF); // B
-				dst[3] = (uint8_t)( px        & 0xFF); // A
+				dst[3] = (originalDestFormat == GL_RGB) ? 255 : (uint8_t)(px & 0xFF); // A
 			}
 			imageMemory = convertedPixels;
 			srcFormat = GL_RGBA;
