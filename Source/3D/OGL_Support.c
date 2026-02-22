@@ -1012,37 +1012,41 @@ GLuint	textureName;
 	{
 		int numPixels = width * height;
 		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
-		if (convertedPixels)
+		if (!convertedPixels)
 		{
-			const uint8_t* src = (const uint8_t*) imageMemory;
-			uint8_t* dst = convertedPixels;
-			for (int i = 0; i < numPixels; i++, src += 3, dst += 4)
-			{
-				dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0]; dst[3] = 255; // BGR→RGBA opaque
-			}
-			imageMemory = convertedPixels;
-			srcFormat = GL_RGBA;
-			destFormat = GL_RGBA;
+			SDL_Log("OGL_TextureMap_Load: OOM converting BGR→RGBA (%dx%d)", width, height);
+			return 0;
 		}
+		const uint8_t* src = (const uint8_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		for (int i = 0; i < numPixels; i++, src += 3, dst += 4)
+		{
+			dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0]; dst[3] = 255; // BGR→RGBA opaque
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
 	}
 	// --- BGRA: not a core GLES 3.0 format; must convert to RGBA ---
 	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
 	{
 		int numPixels = width * height;
 		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
-		if (convertedPixels)
+		if (!convertedPixels)
 		{
-			const uint8_t* src = (const uint8_t*) imageMemory;
-			uint8_t* dst = convertedPixels;
-			for (int i = 0; i < numPixels; i++, src += 4, dst += 4)
-			{
-				dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0];
-				dst[3] = (originalDestFormat == GL_RGB) ? 255 : src[3];
-			}
-			imageMemory = convertedPixels;
-			srcFormat = GL_RGBA;
-			destFormat = GL_RGBA;
+			SDL_Log("OGL_TextureMap_Load: OOM converting BGRA→RGBA (%dx%d)", width, height);
+			return 0;
 		}
+		const uint8_t* src = (const uint8_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		for (int i = 0; i < numPixels; i++, src += 4, dst += 4)
+		{
+			dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0];
+			dst[3] = (originalDestFormat == GL_RGB) ? 255 : src[3];
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
 	}
 	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_SHORT_1_5_5_5_REV)
 	{
@@ -1057,52 +1061,56 @@ GLuint	textureName;
 		// whenever the original destFormat did not intend to carry alpha information.
 		int numPixels = width * height;
 		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
-		if (convertedPixels)
+		if (!convertedPixels)
 		{
-			const uint16_t* src16 = (const uint16_t*) imageMemory;
-			uint8_t* dst = convertedPixels;
-			// Force alpha=255 when destFormat was GL_RGB (opaque, no alpha channel intended).
-			// On desktop GL, sampling a GL_RGB texture always yields alpha=1.0. Reproduce that
-			// here: the 1-bit alpha in xRGB1555 terrain data may be 0 (unused), so never
-			// trust it for textures that were declared opaque.
-			for (int i = 0; i < numPixels; i++, src16++, dst += 4)
-			{
-				uint16_t px = *src16;
-				uint8_t b = (uint8_t)((px & 0x001F) << 3);
-				uint8_t g = (uint8_t)(((px >> 5)  & 0x1F) << 3);
-				uint8_t r = (uint8_t)(((px >> 10) & 0x1F) << 3);
-				uint8_t a = (originalDestFormat == GL_RGB) ? 255
-				          : (uint8_t)(((px >> 15) & 0x1) ? 255 : 0);
-				dst[0] = r; dst[1] = g; dst[2] = b; dst[3] = a;
-			}
-			imageMemory = convertedPixels;
-			srcFormat = GL_RGBA;
-			destFormat = GL_RGBA;
-			dataType = GL_UNSIGNED_BYTE;
+			SDL_Log("OGL_TextureMap_Load: OOM converting 1_5_5_5_REV→RGBA (%dx%d)", width, height);
+			return 0;
 		}
+		const uint16_t* src16 = (const uint16_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		// Force alpha=255 when destFormat was GL_RGB (opaque, no alpha channel intended).
+		// On desktop GL, sampling a GL_RGB texture always yields alpha=1.0. Reproduce that
+		// here: the 1-bit alpha in xRGB1555 terrain data may be 0 (unused), so never
+		// trust it for textures that were declared opaque.
+		for (int i = 0; i < numPixels; i++, src16++, dst += 4)
+		{
+			uint16_t px = *src16;
+			uint8_t b = (uint8_t)((px & 0x001F) << 3);
+			uint8_t g = (uint8_t)(((px >> 5)  & 0x1F) << 3);
+			uint8_t r = (uint8_t)(((px >> 10) & 0x1F) << 3);
+			uint8_t a = (originalDestFormat == GL_RGB) ? 255
+			          : (uint8_t)(((px >> 15) & 0x1) ? 255 : 0);
+			dst[0] = r; dst[1] = g; dst[2] = b; dst[3] = a;
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+		dataType = GL_UNSIGNED_BYTE;
 	}
 	// --- GL_UNSIGNED_INT_8_8_8_8_REV: 32-bit BGRA packed int, Mac-only, not in GLES 3.0 ---
 	else if (srcFormat == GL_BGRA && dataType == (GLint)GLES_UNSIGNED_INT_8_8_8_8_REV)
 	{
 		int numPixels = width * height;
 		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
-		if (convertedPixels)
+		if (!convertedPixels)
 		{
-			const uint32_t* src32 = (const uint32_t*) imageMemory;
-			uint8_t* dst = convertedPixels;
-			for (int i = 0; i < numPixels; i++, src32++, dst += 4)
-			{
-				uint32_t px = *src32;
-				dst[0] = (uint8_t)((px >> 24) & 0xFF); // R
-				dst[1] = (uint8_t)((px >> 16) & 0xFF); // G
-				dst[2] = (uint8_t)((px >>  8) & 0xFF); // B
-				dst[3] = (originalDestFormat == GL_RGB) ? 255 : (uint8_t)(px & 0xFF); // A
-			}
-			imageMemory = convertedPixels;
-			srcFormat = GL_RGBA;
-			destFormat = GL_RGBA;
-			dataType = GL_UNSIGNED_BYTE;
+			SDL_Log("OGL_TextureMap_Load: OOM converting 8_8_8_8_REV→RGBA (%dx%d)", width, height);
+			return 0;
 		}
+		const uint32_t* src32 = (const uint32_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		for (int i = 0; i < numPixels; i++, src32++, dst += 4)
+		{
+			uint32_t px = *src32;
+			dst[0] = (uint8_t)((px >> 24) & 0xFF); // R
+			dst[1] = (uint8_t)((px >> 16) & 0xFF); // G
+			dst[2] = (uint8_t)((px >>  8) & 0xFF); // B
+			dst[3] = (originalDestFormat == GL_RGB) ? 255 : (uint8_t)(px & 0xFF); // A
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+		dataType = GL_UNSIGNED_BYTE;
 	}
 	// --- GL_LUMINANCE / GL_LUMINANCE_ALPHA: not valid in core GLES 3.0 ---
 	// Expand luminance (1-channel) to RGBA by replicating across RGB channels.
@@ -1112,21 +1120,23 @@ GLuint	textureName;
 		int channels = (srcFormat == GL_LUMINANCE) ? 1 : 2;
 		int numPixels = width * height;
 		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
-		if (convertedPixels)
+		if (!convertedPixels)
 		{
-			const uint8_t* src = (const uint8_t*) imageMemory;
-			uint8_t* dst = convertedPixels;
-			for (int i = 0; i < numPixels; i++, src += channels, dst += 4)
-			{
-				uint8_t l = src[0];
-				uint8_t a = (channels == 2) ? src[1] : 255;
-				dst[0] = l; dst[1] = l; dst[2] = l; dst[3] = a;
-			}
-			imageMemory = convertedPixels;
-			srcFormat = GL_RGBA;
-			destFormat = GL_RGBA;
-			dataType = GL_UNSIGNED_BYTE;
+			SDL_Log("OGL_TextureMap_Load: OOM converting LUMINANCE→RGBA (%dx%d)", width, height);
+			return 0;
 		}
+		const uint8_t* src = (const uint8_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		for (int i = 0; i < numPixels; i++, src += channels, dst += 4)
+		{
+			uint8_t l = src[0];
+			uint8_t a = (channels == 2) ? src[1] : 255;
+			dst[0] = l; dst[1] = l; dst[2] = l; dst[3] = a;
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+		dataType = GL_UNSIGNED_BYTE;
 	}
 
 	// --- GLES 3.0 Table 8.2: GL_RGB5_A1 / GL_RGBA4 with GL_UNSIGNED_BYTE is allowed
