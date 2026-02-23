@@ -85,12 +85,15 @@
 // BUTTON DEFINITIONS
 // ============================================================
 
+// Sentinel value for TouchButton::needID2 (no secondary need mapping)
+#define NO_SECONDARY_NEED  (-1)
+
 typedef struct
 {
     float       cx, cy;     // center in [0..1] screen space
     float       radius;     // hit radius in [0..1]
     int         needID;     // primary kNeed_XXX
-    int         needID2;    // secondary kNeed_XXX (-1 = none); enables dual-function buttons
+    int         needID2;    // secondary kNeed_XXX (NO_SECONDARY_NEED if unused); enables dual-function buttons
     int         fingerID;   // SDL finger id holding this button (-1 if none)
     bool        pressed;
     bool        wasPressed;
@@ -192,15 +195,15 @@ void TouchControls_Init(void)
     // ---- Unified action buttons (always visible; work in both menus and gameplay) ----
     // Row 1 (top): ThrowForward(Y/yellow), ThrowBackward(X/blue), CameraMode(LB/cyan), RearView(LT/purple)
     // Row 2 (bottom): Forward(A/green)=UIConfirm, Backward(B/red)=UIBack, Brakes(RT/orange), Pause(Start/grey)
-    // needID2 makes A and B dual-purpose: A=Forward+UIConfirm, B=Backward+UIBack, Pause=UIPause+UIStart
-    gTC.buttons[0] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowForward,  -1,              -1, false, false };
-    gTC.buttons[1] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowBackward, -1,              -1, false, false };
-    gTC.buttons[2] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_CameraMode,    -1,              -1, false, false };
-    gTC.buttons[3] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_RearView,      -1,              -1, false, false };
-    gTC.buttons[4] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Forward,       kNeed_UIConfirm, -1, false, false };
-    gTC.buttons[5] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Backward,      kNeed_UIBack,    -1, false, false };
-    gTC.buttons[6] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Brakes,        -1,              -1, false, false };
-    gTC.buttons[7] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_UIPause,       kNeed_UIStart,   -1, false, false };
+    // needID2 makes A/B/Pause dual-purpose: works as game input AND menu navigation simultaneously
+    gTC.buttons[0] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowForward,  NO_SECONDARY_NEED, -1, false, false };
+    gTC.buttons[1] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowBackward, NO_SECONDARY_NEED, -1, false, false };
+    gTC.buttons[2] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_CameraMode,    NO_SECONDARY_NEED, -1, false, false };
+    gTC.buttons[3] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_RearView,      NO_SECONDARY_NEED, -1, false, false };
+    gTC.buttons[4] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Forward,       kNeed_UIConfirm,   -1, false, false };
+    gTC.buttons[5] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Backward,      kNeed_UIBack,      -1, false, false };
+    gTC.buttons[6] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Brakes,        NO_SECONDARY_NEED, -1, false, false };
+    gTC.buttons[7] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_UIPause,       kNeed_UIStart,     -1, false, false };
     gTC.numButtons = 8;
 
     // Try to open gyroscope
@@ -578,7 +581,8 @@ SteeringMode TouchControls_GetSteeringMode(void)
 void TouchControls_SetGameMode(bool inGame)
 {
     // The unified layout works in both menus and gameplay; no button-set switching needed.
-    // Reset all buttons to avoid stuck inputs when context changes.
+    // Parameter kept for API compatibility with call sites (e.g. OGL_Support.c).
+    // Only reset button states to avoid stuck inputs when context changes.
     (void)inGame;
     for (int i = 0; i < gTC.numButtons; i++)
         gTC.buttons[i].pressed = gTC.buttons[i].wasPressed = false;
