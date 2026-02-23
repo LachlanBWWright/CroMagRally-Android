@@ -7,7 +7,7 @@ on:
     branches: ["**"]
 
 permissions:
-  contents: read
+  contents: write   # needed to create GitHub releases
 
 jobs:
   build-android-apk:
@@ -51,10 +51,34 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: cromagrally-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           compression-level: 0
+
+      # Publish a rolling "latest" release only when main branch is updated
+      - name: Create or update GitHub Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+          TAG="latest-debug"
+          TITLE="Latest Debug Build"
+          NOTES="Automatically published debug APK from the latest commit on \`main\`.
+
+          Commit: ${{ github.sha }}
+          Built: $(date -u '+%Y-%m-%d %H:%M UTC')"
+
+          # Delete the old release + tag if they exist, then recreate
+          gh release delete "$TAG" --yes --repo "${{ github.repository }}" 2>/dev/null || true
+          git push --delete origin "refs/tags/$TAG" 2>/dev/null || true
+
+          gh release create "$TAG" "$APK" \
+            --repo "${{ github.repository }}" \
+            --title "$TITLE" \
+            --notes "$NOTES" \
+            --prerelease

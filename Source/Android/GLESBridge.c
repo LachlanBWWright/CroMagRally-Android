@@ -816,6 +816,7 @@ void bridge_Enable(GLenum cap)
         case 0x0B50: gLightingEnabled      = true;  break; // GL_LIGHTING
         case 0x0B57: gColorMaterialEnabled = true;  break; // GL_COLOR_MATERIAL
         case 0x0BA1: gNormalizeEnabled     = true;  break; // GL_NORMALIZE
+        case 0x803A: /* GL_RESCALE_NORMAL – no-op in GLES3 */  break;
         case 0x0BC0: gAlphaTest.enabled    = true;  break; // GL_ALPHA_TEST
         case 0x0B60: gFog.enabled          = true;  break; // GL_FOG
         case 0x0DE1: gTexture2DEnabled     = true;  break; // GL_TEXTURE_2D – no-op in GLES3
@@ -841,6 +842,7 @@ void bridge_Disable(GLenum cap)
         case 0x0B50: gLightingEnabled      = false; break;
         case 0x0B57: gColorMaterialEnabled = false; break;
         case 0x0BA1: gNormalizeEnabled     = false; break;
+        case 0x803A: /* GL_RESCALE_NORMAL – no-op in GLES3 */  break;
         case 0x0BC0: gAlphaTest.enabled    = false; break;
         case 0x0B60: gFog.enabled          = false; break;
         case 0x0DE1: gTexture2DEnabled     = false; break; // GL_TEXTURE_2D
@@ -861,6 +863,7 @@ bool bridge_IsEnabled(GLenum cap)
         case 0x0B50: return gLightingEnabled;
         case 0x0B57: return gColorMaterialEnabled;
         case 0x0BA1: return gNormalizeEnabled;
+        case 0x803A: return false; // GL_RESCALE_NORMAL – not tracked, always off
         case 0x0BC0: return gAlphaTest.enabled;
         case 0x0B60: return gFog.enabled;
         case 0x0DE1: return gTexture2DEnabled;
