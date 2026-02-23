@@ -1,6 +1,6 @@
 // GLES BRIDGE IMPLEMENTATION
 // Emulates OpenGL 1.x/2.x fixed-function pipeline on top of OpenGL ES 3.0
-// for the Android port of Bugdom.
+// for the Android port of Cro-Mag Rally.
 
 #ifdef __ANDROID__
 
@@ -15,9 +15,9 @@
 // (which mirror the desktop glOrtho/glFrustum signatures) compile cleanly.
 typedef double GLdouble;
 
-#define LOGI(...)  __android_log_print(ANDROID_LOG_INFO,  "Bugdom", __VA_ARGS__)
-#define LOGW(...)  __android_log_print(ANDROID_LOG_WARN,  "Bugdom", __VA_ARGS__)
-#define LOGE(...)  __android_log_print(ANDROID_LOG_ERROR, "Bugdom", __VA_ARGS__)
+#define LOGI(...)  __android_log_print(ANDROID_LOG_INFO,  "CroMagRally", __VA_ARGS__)
+#define LOGW(...)  __android_log_print(ANDROID_LOG_WARN,  "CroMagRally", __VA_ARGS__)
+#define LOGE(...)  __android_log_print(ANDROID_LOG_ERROR, "CroMagRally", __VA_ARGS__)
 
 // Undefine our own macros so this .c file can call the real GLES functions
 #undef glEnable
@@ -1224,6 +1224,50 @@ void bridge_End(void)
     const int kStride = (3 + 3 + 2 + 4) * 4;
     static float *buf = NULL;
     static int    bufCap = 0;
+
+    // GL_QUADS: convert to triangles (each quad = 4 verts → 6 verts / 2 triangles)
+    if (gImmMode == 0x0007 /* GL_QUADS */)
+    {
+        int quadCount = gImmVertCount / 4;
+        int triVertCount = quadCount * 6;
+        int needed = triVertCount * kStride;
+        if (needed > bufCap)
+        {
+            free(buf);
+            buf    = (float *)malloc((size_t)needed);
+            bufCap = needed;
+        }
+        if (!buf) { gImmVertCount = 0; return; }
+
+        for (int q = 0; q < quadCount; q++)
+        {
+            // Quad vertices: v0, v1, v2, v3
+            // Triangle 1: v0, v1, v2
+            // Triangle 2: v0, v2, v3
+            int qi[4] = { q*4+0, q*4+1, q*4+2, q*4+3 };
+            int oi[6] = { qi[0], qi[1], qi[2], qi[0], qi[2], qi[3] };
+            for (int t = 0; t < 6; t++)
+            {
+                int si = oi[t];
+                float *out = buf + (q * 6 + t) * (kStride / 4);
+                out[0]  = gImmVerts[si].x;  out[1]  = gImmVerts[si].y;  out[2]  = gImmVerts[si].z;
+                out[3]  = gImmVerts[si].nx; out[4]  = gImmVerts[si].ny; out[5]  = gImmVerts[si].nz;
+                out[6]  = gImmVerts[si].u;  out[7]  = gImmVerts[si].v;
+                out[8]  = gImmVerts[si].r;  out[9]  = gImmVerts[si].g;
+                out[10] = gImmVerts[si].b;  out[11] = gImmVerts[si].a;
+            }
+        }
+
+        glBindBuffer(GL_ARRAY_BUFFER, gStreamVBO);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(triVertCount * kStride), buf, GL_STREAM_DRAW);
+        SetupVAOAttribs();
+        glUniform1i(gUniHasVertexColors, GL_TRUE);
+        glDrawArrays(GL_TRIANGLES, 0, triVertCount);
+        glBindVertexArray(0);
+        gImmVertCount = 0;
+        return;
+    }
+
     int needed = gImmVertCount * kStride;
     if (needed > bufCap)
     {

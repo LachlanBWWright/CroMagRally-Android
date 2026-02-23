@@ -12,8 +12,6 @@
 #ifdef __ANDROID__
 #include "Android/AndroidAssets.h"
 #include "Android/TouchControls.h"
-#include "Android/GLESBridge.h"
-#include <filesystem>
 #endif
 
 extern "C"
@@ -159,7 +157,6 @@ static void Boot(int argc, char** argv)
 
 	// Create ~/.config directory so Pomme's preference file writes succeed
 	{
-		namespace fs = std::filesystem;
 		const char *home = getenv("HOME");
 		if (home) {
 			std::error_code ec;
@@ -251,7 +248,6 @@ static void Shutdown()
 
 #ifdef __ANDROID__
 	TouchControls_Shutdown();
-	GLESBridge_Shutdown();
 #endif
 
 	Pomme::Shutdown();

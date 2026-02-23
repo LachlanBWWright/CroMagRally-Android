@@ -359,12 +359,9 @@ void TouchControls_Draw(void)
 
     // Update layout for current window size
     int w, h;
-    if (SDL_GetWindowSizeInPixels != NULL) {
+    {
         extern SDL_Window *gSDLWindow;
         SDL_GetWindowSizeInPixels(gSDLWindow, &w, &h);
-    } else {
-        w = gScreenW;
-        h = gScreenH;
     }
     UpdateLayout(w, h);
 
@@ -382,11 +379,9 @@ void TouchControls_Draw(void)
     bridge_Disable(GL_DEPTH_TEST);
     bridge_Disable(GL_LIGHTING);
     bridge_Disable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_TEXTURE_2D);
+    bridge_Disable(GL_FOG);
 
     bridge_FlushState();
 
@@ -460,7 +455,6 @@ void TouchControls_Draw(void)
     // Restore state
     bridge_Enable(GL_DEPTH_TEST);
     bridge_Enable(GL_LIGHTING);
-    glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
 
     bridge_FlushState();

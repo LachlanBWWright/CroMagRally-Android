@@ -1,6 +1,6 @@
 // GLES COMPATIBILITY BRIDGE
 // Emulates OpenGL 1.x/2.x fixed-function pipeline on top of OpenGL ES 3.0
-// Used for the Android port of Bugdom.
+// Used for the Android port of Cro-Mag Rally.
 
 #pragma once
 
@@ -307,6 +307,16 @@ void bridge_FlushState(void);
 // The bridge's Enable/Disable handles it as a no-op.
 #ifndef GL_TEXTURE_2D
 #define GL_TEXTURE_2D           0x0DE1
+#endif
+
+// GL_LUMINANCE / GL_LUMINANCE_ALPHA are not in GLES3.
+// Defined here so texture-loading code that checks these formats compiles.
+// The actual conversion to GL_RED/GL_R8 happens in OGL_TextureMap_Load.
+#ifndef GL_LUMINANCE
+#define GL_LUMINANCE        0x1909
+#endif
+#ifndef GL_LUMINANCE_ALPHA
+#define GL_LUMINANCE_ALPHA  0x190A
 #endif
 
 #endif // __ANDROID__
