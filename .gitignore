@@ -8,3 +8,8 @@ dist/
 .vs/
 .DS_Store
 *.user
+
+# Android build artifacts
+android/.gradle/
+android/app/build/
+_codeql_detected_source_root

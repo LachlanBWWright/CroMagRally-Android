@@ -101,6 +101,9 @@ OSErr		iErr;
 
 #if _DEBUG											// in debug builds, boot with debug mode (you can turn it off with F8)
 	gDebugMode = 1;
+#ifdef __ANDROID__
+	gDebugMode = 0;									// hide debug HUD on Android; no keyboard to toggle it
+#endif
 #endif
 
 

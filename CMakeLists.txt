@@ -22,6 +22,16 @@ project(${GAME_TARGET}
 option(BUILD_SDL_FROM_SOURCE "Build SDL from source" OFF)
 option(SDL_STATIC "Static link SDL" OFF)
 
+# Add cmake/ directory to MODULE_PATH so our FindSDL3.cmake is found even when
+# CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY (Android NDK toolchain).
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
+if(ANDROID)
+	set(BUILD_SDL_FROM_SOURCE ON CACHE BOOL "Build SDL from source for Android" FORCE)
+	set(SDL_STATIC OFF CACHE BOOL "Use shared SDL on Android" FORCE)
+	add_compile_definitions(__ANDROID__)
+endif()
+
 option(SANITIZE "Build with asan/ubsan" OFF)
 
 if(WIN32 OR APPLE)
@@ -85,8 +95,17 @@ else()
 	if(NOT DEFINED SDL3_DIR)
 		set(SDL3_DIR "${CMAKE_SOURCE_DIR}/extern/SDL")
 	endif()
-	message("Building SDL3 from source: " ${SDL3_DIR})
-	add_subdirectory("${SDL3_DIR}" EXCLUDE_FROM_ALL)
+	# Protect against a stale SDL3_DIR=SDL3_DIR-NOTFOUND cache entry left behind
+	# by a failed find_package call from a previous CMake run (Gradle runs CMake
+	# once per ABI and reuses the same binary dir).
+	if("${SDL3_DIR}" MATCHES "-NOTFOUND$")
+		set(SDL3_DIR "${CMAKE_SOURCE_DIR}/extern/SDL" CACHE PATH "SDL3 source dir" FORCE)
+	endif()
+	message("Building SDL3 from source: ${SDL3_DIR}")
+	add_subdirectory("${SDL3_DIR}" "${CMAKE_BINARY_DIR}/SDL3_bin" EXCLUDE_FROM_ALL)
+	# cmake/FindSDL3.cmake (module-mode, not restricted by NDK's
+	# CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY) handles Pomme's
+	# find_package(SDL3 REQUIRED) by checking whether SDL3::SDL3 target exists.
 endif()
 
 #------------------------------------------------------------------------------
@@ -95,7 +114,9 @@ endif()
 
 add_subdirectory(extern/Pomme)
 
-find_package(OpenGL REQUIRED)
+if(NOT ANDROID)
+	find_package(OpenGL REQUIRED)
+endif()
 
 #------------------------------------------------------------------------------
 # EXECUTABLE TARGET
@@ -119,9 +140,14 @@ elseif(APPLE)
 	set_source_files_properties(${CMAKE_SOURCE_DIR}/packaging/${GAME_TARGET}.icns PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 endif()
 
-add_executable(${GAME_TARGET} ${GAME_SOURCES})
+if(ANDROID)
+	add_library(${GAME_TARGET} SHARED ${GAME_SOURCES})
+	set_target_properties(${GAME_TARGET} PROPERTIES OUTPUT_NAME "main")
+else()
+	add_executable(${GAME_TARGET} ${GAME_SOURCES})
+endif()
 
-target_include_directories(${GAME_TARGET} PRIVATE ${GAME_SRCDIR}/Headers)
+target_include_directories(${GAME_TARGET} PRIVATE ${GAME_SRCDIR}/Headers ${GAME_SRCDIR})
 
 #------------------------------------------------------------------------------
 # COMPILER/LINKER OPTIONS
@@ -212,7 +238,11 @@ else()
 endif()
 
 # Link core dependencies
-target_link_libraries(${GAME_TARGET} PRIVATE Pomme OpenGL::GL)
+if(ANDROID)
+	target_link_libraries(${GAME_TARGET} PRIVATE Pomme GLESv3 log android)
+else()
+	target_link_libraries(${GAME_TARGET} PRIVATE Pomme OpenGL::GL)
+endif()
 
 # Add required frameworks for KillMacMouseAcceleration
 if(APPLE)
@@ -279,27 +309,29 @@ set_target_properties(${GAME_TARGET} PROPERTIES
 # POST-BUILD (COPY ASSETS, ETC.)
 #------------------------------------------------------------------------------
 
-if(APPLE)
-	set(GAME_DATA_TARGET_LOCATION "$<TARGET_FILE_DIR:${GAME_TARGET}>/../Resources")
-else()
-	set(GAME_DATA_TARGET_LOCATION "$<TARGET_FILE_DIR:${GAME_TARGET}>/Data")
-endif()
-
-add_custom_command(TARGET ${GAME_TARGET} POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E copy_directory "${GAME_DATADIR}" "${GAME_DATA_TARGET_LOCATION}")
-
-if(APPLE)
-	set(INFO_PLIST "${GAME_DATA_TARGET_LOCATION}/../Info.plist")
+if(NOT ANDROID)
+	if(APPLE)
+		set(GAME_DATA_TARGET_LOCATION "$<TARGET_FILE_DIR:${GAME_TARGET}>/../Resources")
+	else()
+		set(GAME_DATA_TARGET_LOCATION "$<TARGET_FILE_DIR:${GAME_TARGET}>/Data")
+	endif()
 
 	add_custom_command(TARGET ${GAME_TARGET} POST_BUILD
-		# Copy extra resources to app bundle
-		COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/packaging/mainmenu.nib ${GAME_DATA_TARGET_LOCATION}/mainmenu.nib
+		COMMAND ${CMAKE_COMMAND} -E copy_directory "${GAME_DATADIR}" "${GAME_DATA_TARGET_LOCATION}")
 
-		# Info.plist: high-DPI support, Game Mode, honor mainmenu.nib
-		COMMAND plutil -replace NSHighResolutionCapable -bool true ${INFO_PLIST}
-		COMMAND plutil -replace LSApplicationCategoryType -string "public.app-category.games" ${INFO_PLIST}
-		COMMAND plutil -replace NSMainNibFile -string "mainmenu" ${INFO_PLIST}
-	)
+	if(APPLE)
+		set(INFO_PLIST "${GAME_DATA_TARGET_LOCATION}/../Info.plist")
+
+		add_custom_command(TARGET ${GAME_TARGET} POST_BUILD
+			# Copy extra resources to app bundle
+			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/packaging/mainmenu.nib ${GAME_DATA_TARGET_LOCATION}/mainmenu.nib
+
+			# Info.plist: high-DPI support, Game Mode, honor mainmenu.nib
+			COMMAND plutil -replace NSHighResolutionCapable -bool true ${INFO_PLIST}
+			COMMAND plutil -replace LSApplicationCategoryType -string "public.app-category.games" ${INFO_PLIST}
+			COMMAND plutil -replace NSMainNibFile -string "mainmenu" ${INFO_PLIST}
+		)
+	endif()
 endif()
 
 # Windows-specific libraries
@@ -313,4 +345,6 @@ if(WIN32)
 endif()
 
 # Copy documentation to output folder
-configure_file(${CMAKE_SOURCE_DIR}/packaging/ReadMe.txt.in ${CMAKE_CURRENT_BINARY_DIR}/ReadMe.txt)
+if(NOT ANDROID)
+	configure_file(${CMAKE_SOURCE_DIR}/packaging/ReadMe.txt.in ${CMAKE_CURRENT_BINARY_DIR}/ReadMe.txt)
+endif()
