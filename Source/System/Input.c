@@ -4,6 +4,10 @@
 
 #include "game.h"
 
+#ifdef __ANDROID__
+#include "Android/TouchControls.h"
+#endif
+
 extern SDL_Window* gSDLWindow;
 
 /***************/
@@ -271,13 +275,35 @@ void DoSDLMaintenance(void)
 				break;
 
 			case SDL_EVENT_MOUSE_MOTION:
+#ifdef __ANDROID__
+				// Ignore synthetic mouse-motion events generated from touch
+				if (event.motion.which == SDL_TOUCH_MOUSEID)
+					break;
+#endif
 				gMouseMotionNow = true;
+				break;
+
+			case SDL_EVENT_MOUSE_BUTTON_DOWN:
+			case SDL_EVENT_MOUSE_BUTTON_UP:
+#ifdef __ANDROID__
+				// Ignore synthetic mouse-button events generated from touch
+				if (event.button.which == SDL_TOUCH_MOUSEID)
+					break;
+#endif
 				break;
 
 			case SDL_EVENT_MOUSE_WHEEL:
 				mouseWheelDelta += event.wheel.y;
 				mouseWheelDelta += event.wheel.x;
 				break;
+
+#ifdef __ANDROID__
+			case SDL_EVENT_FINGER_DOWN:
+			case SDL_EVENT_FINGER_UP:
+			case SDL_EVENT_FINGER_MOTION:
+				TouchControls_ProcessEvent(&event);
+				break;
+#endif
 
 			case SDL_EVENT_GAMEPAD_ADDED:
 				TryOpenGamepadFromJoystick(event.gdevice.which);

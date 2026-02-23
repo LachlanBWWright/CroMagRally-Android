@@ -9,6 +9,13 @@
 #include "PommeInit.h"
 #include "PommeFiles.h"
 
+#ifdef __ANDROID__
+#include "Android/AndroidAssets.h"
+#include "Android/TouchControls.h"
+#include "Android/GLESBridge.h"
+#include <filesystem>
+#endif
+
 extern "C"
 {
 	#include "game.h"
@@ -23,6 +30,21 @@ static fs::path FindGameData(const char* executablePath)
 {
 	fs::path dataPath;
 
+#ifdef __ANDROID__
+	// On Android, assets are extracted to internal storage
+	const char* internalPath = SDL_GetAndroidInternalStoragePath();
+	if (!internalPath)
+		throw std::runtime_error("Couldn't get Android internal storage path.");
+
+	dataPath = internalPath;
+
+	// Extract all APK assets to internal storage (skips if already up-to-date)
+	if (!Android_ExtractAssets(internalPath))
+		throw std::runtime_error("Failed to extract game data from APK.");
+
+	gDataSpec = Pomme::Files::HostPathToFSSpec(dataPath / "System");
+	return dataPath;
+#else
 	int attemptNum = 0;
 
 #if !(__APPLE__)
@@ -68,6 +90,7 @@ tryAgain:
 	}
 
 	return dataPath;
+#endif
 }
 
 static void ParseCommandLine(int argc, char** argv)
@@ -126,6 +149,25 @@ static void Boot(int argc, char** argv)
 	SDL_SetLogPriorities(SDL_LOG_PRIORITY_INFO);
 #endif
 
+#ifdef __ANDROID__
+	// Set HOME to internal storage so Pomme can find preference files
+	if (!getenv("HOME")) {
+		const char* internalPath = SDL_GetAndroidInternalStoragePath();
+		if (internalPath)
+			setenv("HOME", internalPath, 1);
+	}
+
+	// Create ~/.config directory so Pomme's preference file writes succeed
+	{
+		namespace fs = std::filesystem;
+		const char *home = getenv("HOME");
+		if (home) {
+			std::error_code ec;
+			fs::create_directories(std::string(home) + "/.config", ec);
+		}
+	}
+#endif
+
 	ParseCommandLine(argc, argv);
 
 	// Start our "machine"
@@ -145,10 +187,17 @@ retryVideo:
 		throw std::runtime_error("Couldn't initialize SDL video subsystem.");
 	}
 
+#ifdef __ANDROID__
+	// Request OpenGL ES 3.0 context on Android
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#else
 	// Create window
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
 
 	gCurrentAntialiasingLevel = gGamePrefs.antialiasingLevel;
 	if (gCurrentAntialiasingLevel != 0)
@@ -185,12 +234,25 @@ retryVideo:
 	{
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, GAME_FULL_NAME, "Couldn't load gamecontrollerdb.txt!", gSDLWindow);
 	}
+
+#ifdef __ANDROID__
+	// Initialize GLES bridge after GL context is created by OGL_Boot
+	// (GLESBridge_Init is called from OGL_Boot via OGL_InitDrawContext)
+
+	// Initialize touch controls and virtual gamepad
+	TouchControls_Init();
+#endif
 }
 
 static void Shutdown()
 {
 	// Always restore the user's mouse acceleration before exiting.
 	// SetMacLinearMouse(false);
+
+#ifdef __ANDROID__
+	TouchControls_Shutdown();
+	GLESBridge_Shutdown();
+#endif
 
 	Pomme::Shutdown();
 
@@ -217,9 +279,9 @@ int main(int argc, char** argv)
 	{
 		// no-op, the game may throw this exception to shut us down cleanly
 	}
-#if !(_DEBUG)
-	// In release builds, catch anything that might be thrown by GameMain
-	// so we can show an error dialog to the user.
+#if !(_DEBUG) || defined(__ANDROID__)
+	// In release builds (and always on Android), catch anything that might be
+	// thrown by GameMain so we can show an error dialog to the user.
 	catch (std::exception& ex)		// Last-resort catch
 	{
 		success = false;

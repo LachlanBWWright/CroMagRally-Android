@@ -13,7 +13,12 @@
 #include "game.h"
 #include "stb_image.h"
 #include "pillarbox.h"
+#ifndef __ANDROID__
 #include <SDL3/SDL_opengl.h>
+#else
+#include "Android/GLESBridge.h"
+#include "Android/TouchControls.h"
+#endif
 #include <math.h>
 
 extern SDL_Window*		gSDLWindow;
@@ -396,6 +401,10 @@ static void OGL_InitDrawContext(void)
 {
 	GAME_ASSERT(gStateStackIndex == 0);
 
+#ifdef __ANDROID__
+	GLESBridge_Init();
+#endif
+
 	glEnable(GL_DEPTH_TEST);								// use z-buffer
 
 	{
@@ -645,6 +654,11 @@ void OGL_DrawScene(void (*drawRoutine)(void))
             /**************/
 			/* END RENDER */
 			/**************/
+
+#ifdef __ANDROID__
+	TouchControls_UpdateVirtualGamepad();
+	TouchControls_Draw();
+#endif
 
            /* SWAP THE BUFFS */
 
@@ -942,6 +956,61 @@ GLuint	textureName;
 		OGL_FixTextureGamma(imageMemory, width, height, srcFormat, dataType);
 	}
 
+#ifdef __ANDROID__
+	// GLES 3.0 does not support GL_BGRA+GL_UNSIGNED_SHORT_1_5_5_5_REV or GL_LUMINANCE.
+	// Convert to supported formats.
+	uint8_t *convertedPixels = NULL;
+	if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_SHORT_1_5_5_5_REV)
+	{
+		// 16-bit BGRA1555 → 32-bit RGBA8888
+		int pixelCount = width * height;
+		convertedPixels = (uint8_t*)SDL_malloc(pixelCount * 4);
+		const uint8_t *src = (const uint8_t*)imageMemory;
+		for (int i = 0; i < pixelCount; i++)
+		{
+			// Little-endian 1-5-5-5 REV: stored as two bytes
+			uint16_t px = (uint16_t)(src[i*2] | (src[i*2+1] << 8));
+			uint8_t a = (px >> 15) & 0x1;
+			uint8_t r = (px >> 10) & 0x1F;
+			uint8_t g = (px >> 5)  & 0x1F;
+			uint8_t b = (px >> 0)  & 0x1F;
+			// Scale 5-bit to 8-bit
+			convertedPixels[i*4+0] = (uint8_t)((r << 3) | (r >> 2));
+			convertedPixels[i*4+1] = (uint8_t)((g << 3) | (g >> 2));
+			convertedPixels[i*4+2] = (uint8_t)((b << 3) | (b >> 2));
+			convertedPixels[i*4+3] = a ? 0xFF : 0x00;
+		}
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+		dataType = GL_UNSIGNED_BYTE;
+		imageMemory = convertedPixels;
+	}
+	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
+	{
+		// Swap R and B channels in-place
+		uint8_t *px = (uint8_t*)imageMemory;
+		int pixelCount = width * height;
+		for (int i = 0; i < pixelCount; i++)
+		{
+			uint8_t tmp = px[i*4+0];
+			px[i*4+0] = px[i*4+2];
+			px[i*4+2] = tmp;
+		}
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+	}
+	else if (srcFormat == GL_LUMINANCE)
+	{
+		srcFormat = GL_RED;
+		destFormat = GL_R8;
+	}
+	else if (srcFormat == GL_LUMINANCE_ALPHA)
+	{
+		srcFormat = GL_RG;
+		destFormat = GL_RG8;
+	}
+#endif
+
 	glTexImage2D(GL_TEXTURE_2D,
 				0,										// mipmap level
 				destFormat,								// format in OpenGL
@@ -951,6 +1020,11 @@ GLuint	textureName;
 				srcFormat,								// what my format is
 				dataType,								// size of each r,g,b
 				imageMemory);							// pointer to the actual texture pixels
+
+#ifdef __ANDROID__
+	if (convertedPixels)
+		SDL_free(convertedPixels);
+#endif
 
 
 			/* SEE IF RAN OUT OF MEMORY WHILE COPYING TO OPENGL */
@@ -1220,7 +1294,11 @@ int	i;
 	gStateStack_Blend[i] 	= glIsEnabled(GL_BLEND);
 	gStateStack_ProjectionType[i] = gMyState_ProjectionType;
 
+#ifdef __ANDROID__
+	bridge_GetCurrentColor(&gStateStack_Color[i][0]);
+#else
 	glGetFloatv(GL_CURRENT_COLOR, &gStateStack_Color[i][0]);
+#endif
 
 	glGetIntegerv(GL_BLEND_SRC, &gStateStack_BlendSrc[i]);
 	glGetIntegerv(GL_BLEND_DST, &gStateStack_BlendDst[i]);
