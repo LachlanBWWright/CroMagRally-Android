@@ -89,7 +89,8 @@ typedef struct
 {
     float       cx, cy;     // center in [0..1] screen space
     float       radius;     // hit radius in [0..1]
-    int         needID;     // kNeed_XXX
+    int         needID;     // primary kNeed_XXX
+    int         needID2;    // secondary kNeed_XXX (-1 = none); enables dual-function buttons
     int         fingerID;   // SDL finger id holding this button (-1 if none)
     bool        pressed;
     bool        wasPressed;
@@ -99,6 +100,9 @@ typedef struct
 // STATE
 // ============================================================
 
+// Joystick Y-axis UI threshold (0..1 normalised joystick magnitude)
+#define JOY_UI_DEADZONE  0.40f
+
 static struct
 {
     // Joystick
@@ -107,18 +111,15 @@ static struct
     int         joyFingerID;        // which finger is on joystick (-1 = none)
     bool        joyActive;
 
-    // Buttons: separate sets for game and menu modes
-    TouchButton gameButtons[MAX_GAME_BUTTONS];
-    int         numGameButtons;
-    TouchButton menuButtons[MAX_MENU_BUTTONS];
-    int         numMenuButtons;
-
-    // Currently active button set (points to either gameButtons or menuButtons)
-    TouchButton* buttons;
+    // Single unified button set (always visible; dual-function A/B buttons work in menus too)
+    TouchButton buttons[MAX_BUTTONS];
     int         numButtons;
 
-    // Game mode flag
-    bool        inGame;
+    // Joystick axis → UI navigation new-press tracking
+    bool        joyUIUpHeld,    joyUIUpNew;
+    bool        joyUIDownHeld,  joyUIDownNew;
+    bool        joyUILeftHeld,  joyUILeftNew;
+    bool        joyUIRightHeld, joyUIRightNew;
 
     // Gyroscope
     SDL_Sensor* gyroSensor;
@@ -188,31 +189,19 @@ void TouchControls_Init(void)
     gTC.modeBtnCY = MODE_BTN_Y;
     gTC.modeBtnR  = MODE_BTN_RADIUS;
 
-    // ---- Game action buttons (all in-game controls) ----
-    // Row 1: ThrowForward, ThrowBackward, CameraMode, RearView
-    gTC.gameButtons[0] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowForward,  -1, false, false };
-    gTC.gameButtons[1] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowBackward, -1, false, false };
-    gTC.gameButtons[2] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_CameraMode,    -1, false, false };
-    gTC.gameButtons[3] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_RearView,      -1, false, false };
-    // Row 2: Forward, Backward, Brakes, Pause
-    gTC.gameButtons[4] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Forward,       -1, false, false };
-    gTC.gameButtons[5] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Backward,      -1, false, false };
-    gTC.gameButtons[6] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Brakes,        -1, false, false };
-    gTC.gameButtons[7] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_UIPause,       -1, false, false };
-    gTC.numGameButtons = 8;
-
-    // ---- Menu navigation buttons ----
-    gTC.menuButtons[0] = (TouchButton){ MENU_NAV_X,     MENU_UP_Y,      MENU_BTN_RADIUS, kNeed_UIUp,      -1, false, false };
-    gTC.menuButtons[1] = (TouchButton){ MENU_CONFIRM_X, MENU_CONFIRM_Y, MENU_BTN_RADIUS, kNeed_UIConfirm, -1, false, false };
-    gTC.menuButtons[2] = (TouchButton){ MENU_NAV_X,     MENU_DOWN_Y,    MENU_BTN_RADIUS, kNeed_UIDown,    -1, false, false };
-    gTC.menuButtons[3] = (TouchButton){ MENU_BACK_X,    MENU_BACK_Y,    MENU_BTN_RADIUS, kNeed_UIBack,    -1, false, false };
-    gTC.menuButtons[4] = (TouchButton){ 0.93f,          0.08f,          MENU_BTN_RADIUS, kNeed_UIConfirm, -1, false, false }; // Continue/Space (top-right)
-    gTC.numMenuButtons = 5;
-
-    // Default to menu mode; will be switched to game mode when gameplay starts
-    gTC.inGame = false;
-    gTC.buttons = gTC.menuButtons;
-    gTC.numButtons = gTC.numMenuButtons;
+    // ---- Unified action buttons (always visible; work in both menus and gameplay) ----
+    // Row 1 (top): ThrowForward(Y/yellow), ThrowBackward(X/blue), CameraMode(LB/cyan), RearView(LT/purple)
+    // Row 2 (bottom): Forward(A/green)=UIConfirm, Backward(B/red)=UIBack, Brakes(RT/orange), Pause(Start/grey)
+    // needID2 makes A and B dual-purpose: A=Forward+UIConfirm, B=Backward+UIBack, Pause=UIPause+UIStart
+    gTC.buttons[0] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowForward,  -1,              -1, false, false };
+    gTC.buttons[1] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_ThrowBackward, -1,              -1, false, false };
+    gTC.buttons[2] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_CameraMode,    -1,              -1, false, false };
+    gTC.buttons[3] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW1_Y, BTN_RADIUS, kNeed_RearView,      -1,              -1, false, false };
+    gTC.buttons[4] = (TouchButton){ BTN_RIGHT_COL1_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Forward,       kNeed_UIConfirm, -1, false, false };
+    gTC.buttons[5] = (TouchButton){ BTN_RIGHT_COL2_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Backward,      kNeed_UIBack,    -1, false, false };
+    gTC.buttons[6] = (TouchButton){ BTN_RIGHT_COL3_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_Brakes,        -1,              -1, false, false };
+    gTC.buttons[7] = (TouchButton){ BTN_RIGHT_COL4_X, BTN_ROW2_Y, BTN_RADIUS, kNeed_UIPause,       kNeed_UIStart,   -1, false, false };
+    gTC.numButtons = 8;
 
     // Try to open gyroscope
     int numSensors = 0;
@@ -495,6 +484,21 @@ void TouchControls_EndFrame(void)
         gTC.steering.x = gTC.joyDX;
         gTC.steering.y = gTC.joyDY;
     }
+
+    // Update joystick Y/X → UI navigation new-press state.
+    // "New" fires for exactly one frame when the stick first crosses the threshold.
+    bool up    = gTC.joyDY < -JOY_UI_DEADZONE;
+    bool down  = gTC.joyDY >  JOY_UI_DEADZONE;
+    bool left  = gTC.joyDX < -JOY_UI_DEADZONE;
+    bool right = gTC.joyDX >  JOY_UI_DEADZONE;
+    gTC.joyUIUpNew    = up    && !gTC.joyUIUpHeld;
+    gTC.joyUIDownNew  = down  && !gTC.joyUIDownHeld;
+    gTC.joyUILeftNew  = left  && !gTC.joyUILeftHeld;
+    gTC.joyUIRightNew = right && !gTC.joyUIRightHeld;
+    gTC.joyUIUpHeld    = up;
+    gTC.joyUIDownHeld  = down;
+    gTC.joyUILeftHeld  = left;
+    gTC.joyUIRightHeld = right;
 }
 
 // ============================================================
@@ -508,9 +512,17 @@ TCVector2D TouchControls_GetSteering(void)
 
 bool TouchControls_IsNeedPressed(int needID)
 {
+    // Joystick Y axis → UIUp/UIDown; joystick X axis → UILeft/UIRight
+    // These let the left stick navigate menus (same as a real gamepad left-stick)
+    if (needID == kNeed_UIUp)    return gTC.joyDY < -JOY_UI_DEADZONE;
+    if (needID == kNeed_UIDown)  return gTC.joyDY >  JOY_UI_DEADZONE;
+    if (needID == kNeed_UILeft)  return gTC.joyDX < -JOY_UI_DEADZONE;
+    if (needID == kNeed_UIRight) return gTC.joyDX >  JOY_UI_DEADZONE;
+
     for (int i = 0; i < gTC.numButtons; i++)
     {
-        if (gTC.buttons[i].needID == needID && gTC.buttons[i].pressed)
+        if ((gTC.buttons[i].needID == needID || gTC.buttons[i].needID2 == needID)
+            && gTC.buttons[i].pressed)
             return true;
     }
     return false;
@@ -518,9 +530,15 @@ bool TouchControls_IsNeedPressed(int needID)
 
 bool TouchControls_IsNeedPressedNew(int needID)
 {
+    // Joystick axis UI new-press: fires once when the stick crosses the threshold
+    if (needID == kNeed_UIUp)    return gTC.joyUIUpNew;
+    if (needID == kNeed_UIDown)  return gTC.joyUIDownNew;
+    if (needID == kNeed_UILeft)  return gTC.joyUILeftNew;
+    if (needID == kNeed_UIRight) return gTC.joyUIRightNew;
+
     for (int i = 0; i < gTC.numButtons; i++)
     {
-        if (gTC.buttons[i].needID == needID
+        if ((gTC.buttons[i].needID == needID || gTC.buttons[i].needID2 == needID)
             && gTC.buttons[i].pressed
             && !gTC.buttons[i].wasPressed)
             return true;
@@ -559,28 +577,16 @@ SteeringMode TouchControls_GetSteeringMode(void)
 
 void TouchControls_SetGameMode(bool inGame)
 {
-    gTC.inGame = inGame;
-    // Release all buttons on mode switch to avoid stuck inputs
-    for (int i = 0; i < gTC.numGameButtons; i++)
-        gTC.gameButtons[i].pressed = gTC.gameButtons[i].wasPressed = false;
-    for (int i = 0; i < gTC.numMenuButtons; i++)
-        gTC.menuButtons[i].pressed = gTC.menuButtons[i].wasPressed = false;
-    if (inGame)
-    {
-        gTC.buttons = gTC.gameButtons;
-        gTC.numButtons = gTC.numGameButtons;
-    }
-    else
-    {
-        gTC.buttons = gTC.menuButtons;
-        gTC.numButtons = gTC.numMenuButtons;
-    }
-    TC_LOG("TouchControls mode: %s", inGame ? "game" : "menu");
+    // The unified layout works in both menus and gameplay; no button-set switching needed.
+    // Reset all buttons to avoid stuck inputs when context changes.
+    (void)inGame;
+    for (int i = 0; i < gTC.numButtons; i++)
+        gTC.buttons[i].pressed = gTC.buttons[i].wasPressed = false;
 }
 
 bool TouchControls_GetGameMode(void)
 {
-    return gTC.inGame;
+    return true; // always using game buttons
 }
 
 // ============================================================
@@ -807,9 +813,8 @@ void TouchControls_Draw(void)
     float rx = JOYSTICK_RADIUS;
     float ry_hit = JOYSTICK_RADIUS * ar;
 
-    if (gTC.inGame)
+    // ---- Draw joystick (always visible; works in menus and gameplay) ----
     {
-        // ---- Draw joystick (game mode only) ----
         float jcx = gTC.joyActive ? gTC.joyCX : JOYSTICK_CENTER_X;
         float jcy = gTC.joyActive ? gTC.joyCY : JOYSTICK_CENTER_Y;
 
@@ -827,81 +832,59 @@ void TouchControls_Draw(void)
             TC_SetColor(0.8f, 0.9f, 1.0f, 0.6f);
             DrawCircleOutline(tx, ty, rx * 0.4f, 16);
         }
+    }
 
-        // ---- Draw game action buttons ----
-        for (int i = 0; i < gTC.numButtons; i++)
+    // ---- Draw action buttons (always visible with game-controller colour coding) ----
+    // Row 1: ThrowFwd(yellow), ThrowBack(blue), CameraMode(cyan), RearView(purple)
+    // Row 2: Forward/A(green)=UIConfirm, Backward/B(red)=UIBack, Brakes(orange), Pause(grey)
+    static const float kBtnColors[MAX_BUTTONS][3] = {
+        {1.0f, 0.85f, 0.0f},   // [0] ThrowForward  (Y) = yellow
+        {0.3f, 0.4f,  1.0f},   // [1] ThrowBackward (X) = blue
+        {0.0f, 0.85f, 0.85f},  // [2] CameraMode   (LB) = cyan
+        {0.7f, 0.2f,  0.9f},   // [3] RearView      (LT) = purple
+        {0.1f, 0.85f, 0.25f},  // [4] Forward       (A / UIConfirm) = green
+        {0.9f, 0.2f,  0.15f},  // [5] Backward      (B / UIBack)    = red
+        {1.0f, 0.5f,  0.0f},   // [6] Brakes        (RT) = orange
+        {0.5f, 0.5f,  0.5f},   // [7] Pause         (Start)         = grey
+    };
+    for (int i = 0; i < gTC.numButtons; i++)
+    {
+        TouchButton* btn = &gTC.buttons[i];
+        float r = kBtnColors[i][0], g = kBtnColors[i][1], b = kBtnColors[i][2];
+        float alpha = btn->pressed ? 0.65f : 0.35f;
+        TC_SetColor(r, g, b, alpha);
+        DrawCircleFilled(btn->cx, btn->cy, btn->radius, 24);
+        TC_SetColor(r, g, b, 0.75f);
+        DrawCircleOutline(btn->cx, btn->cy, btn->radius, 24);
+        // Draw icon on A/B buttons for menu context hint
+        if (i == 4)  // Forward/A/UIConfirm: draw ▶ (confirm)
         {
-            TouchButton* btn = &gTC.buttons[i];
-            if (btn->pressed)
-                TC_SetColor(0.6f, 0.8f, 1.0f, 0.5f);
-            else
-                TC_SetColor(0.3f, 0.3f, 0.3f, 0.2f);
-            DrawCircleFilled(btn->cx, btn->cy, btn->radius, 24);
-            TC_SetColor(0.7f, 0.7f, 0.7f, 0.5f);
-            DrawCircleOutline(btn->cx, btn->cy, btn->radius, 24);
+            TC_SetColor(0.0f, 0.0f, 0.0f, 0.6f);
+            DrawPlayIcon(btn->cx, btn->cy, btn->radius * MENU_ICON_SIZE_RATIO);
         }
-
-        // ---- Draw mode toggle button (joystick/gyro) ----
+        else if (i == 5)  // Backward/B/UIBack: draw × (back/cancel)
         {
-            bool isGyro = (gTC.steeringMode == kSteeringMode_Gyroscope);
-            TC_SetColor(isGyro ? 0.2f : 0.5f, isGyro ? 0.8f : 0.5f, isGyro ? 0.2f : 0.5f, 0.35f);
-            DrawCircleFilled(gTC.modeBtnCX, gTC.modeBtnCY, gTC.modeBtnR, 20);
-            TC_SetColor(0.8f, 0.8f, 0.8f, 0.5f);
-            DrawCircleOutline(gTC.modeBtnCX, gTC.modeBtnCY, gTC.modeBtnR, 20);
-        }
-
-        // ---- Draw gyro recenter button (only in gyro mode) ----
-        if (gTC.steeringMode == kSteeringMode_Gyroscope && gTC.gyroSensor)
-        {
-            TC_SetColor(0.2f, 0.6f, 1.0f, 0.4f);
-            DrawCircleFilled(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
-            TC_SetColor(0.8f, 0.9f, 1.0f, 0.6f);
-            DrawCircleOutline(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
+            TC_SetColor(1.0f, 1.0f, 1.0f, 0.7f);
+            DrawCrossIcon(btn->cx, btn->cy, btn->radius * MENU_ICON_SIZE_RATIO);
         }
     }
-    else
-    {
-        // ---- Menu navigation buttons ----
-        // Use distinct colors to hint purpose:
-        //   UIUp    = green-ish (top circle)
-        //   UIDown  = red-ish   (bottom circle)
-        //   Confirm = blue-ish  (middle circle)
-        //   UIBack  = grey      (corner circle)
-        //   Continue/Space (top-right) = yellow-ish
-        float menuColors[5][4] = {
-            {0.2f, 0.8f, 0.3f, 0.45f},  // [0] UIUp    = green
-            {0.3f, 0.5f, 1.0f, 0.45f},  // [1] UIConfirm = blue
-            {0.9f, 0.3f, 0.2f, 0.45f},  // [2] UIDown   = red
-            {0.5f, 0.5f, 0.5f, 0.40f},  // [3] UIBack   = grey
-            {1.0f, 0.9f, 0.1f, 0.50f},  // [4] Continue/Space = yellow
-        };
-        for (int i = 0; i < gTC.numMenuButtons; i++)
-        {
-            TouchButton* btn = &gTC.menuButtons[i];
-            float* c = menuColors[i];
-            if (btn->pressed)
-                TC_SetColor(c[0]*1.4f > 1.f ? 1.f : c[0]*1.4f,
-                            c[1]*1.4f > 1.f ? 1.f : c[1]*1.4f,
-                            c[2]*1.4f > 1.f ? 1.f : c[2]*1.4f, 0.7f);
-            else
-                TC_SetColor(c[0], c[1], c[2], c[3]);
-            DrawCircleFilled(btn->cx, btn->cy, btn->radius, 24);
-            TC_SetColor(c[0], c[1], c[2], 0.7f);
-            DrawCircleOutline(btn->cx, btn->cy, btn->radius, 24);
 
-            // Draw icons for UIBack (×) and Continue/Space (▶)
-            if (i == MENU_BTN_IDX_BACK)  // Escape: draw × icon in white
-            {
-                TC_SetColor(1.0f, 1.0f, 1.0f, 0.85f);
-                DrawCrossIcon(btn->cx, btn->cy, btn->radius * MENU_ICON_SIZE_RATIO);
-            }
-            else if (i == MENU_BTN_IDX_CONTINUE)  // Continue/Space: draw ▶ icon
-            {
-                // Dark yellowish-brown provides optimal contrast on the yellow button background
-                TC_SetColor(0.2f, 0.2f, 0.0f, 0.7f);
-                DrawPlayIcon(btn->cx, btn->cy, btn->radius * MENU_ICON_SIZE_RATIO);
-            }
-        }
+    // ---- Draw mode toggle button (joystick/gyro switch) ----
+    {
+        bool isGyro = (gTC.steeringMode == kSteeringMode_Gyroscope);
+        TC_SetColor(isGyro ? 0.2f : 0.5f, isGyro ? 0.8f : 0.5f, isGyro ? 0.2f : 0.5f, 0.35f);
+        DrawCircleFilled(gTC.modeBtnCX, gTC.modeBtnCY, gTC.modeBtnR, 20);
+        TC_SetColor(0.8f, 0.8f, 0.8f, 0.5f);
+        DrawCircleOutline(gTC.modeBtnCX, gTC.modeBtnCY, gTC.modeBtnR, 20);
+    }
+
+    // ---- Draw gyro recenter button (only in gyro mode) ----
+    if (gTC.steeringMode == kSteeringMode_Gyroscope && gTC.gyroSensor)
+    {
+        TC_SetColor(0.2f, 0.6f, 1.0f, 0.4f);
+        DrawCircleFilled(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
+        TC_SetColor(0.8f, 0.9f, 1.0f, 0.6f);
+        DrawCircleOutline(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
     }
 
     // Restore state
