@@ -851,6 +851,7 @@ bool bridge_IsEnabled(GLenum cap)
     {
         case 0x0B50: return gLightingEnabled;
         case 0x0B57: return gColorMaterialEnabled;
+        case 0x0BA1: return gNormalizeEnabled;
         case 0x0BC0: return gAlphaTest.enabled;
         case 0x0B60: return gFog.enabled;
         case 0x0DE1: return gTexture2DEnabled;
