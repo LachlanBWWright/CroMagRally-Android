@@ -461,6 +461,7 @@ void TouchControls_Draw(void)
     // Restore state
     bridge_Enable(GL_DEPTH_TEST);
     bridge_Enable(GL_LIGHTING);
+    bridge_Enable(GL_CULL_FACE);
     glDisable(GL_BLEND);
 
     bridge_FlushState();
