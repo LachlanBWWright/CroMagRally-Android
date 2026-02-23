@@ -101,6 +101,7 @@ OSErr		iErr;
 
 #if defined(__ANDROID__)
 	gDebugMode = 0;							// no debug overlay on Android
+	gUserPrefersGamepad = true;				// show "PRESS START" prompts (virtual gamepad)
 #elif _DEBUG								// in desktop debug builds, boot with debug mode (you can turn it off with F8)
 	gDebugMode = 1;
 #endif
