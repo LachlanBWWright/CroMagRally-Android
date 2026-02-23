@@ -153,6 +153,13 @@ static struct
     bool        hasNewUnhandledTap;
 } gTC;
 
+// GL resources for TC overlay drawing -- allocated once by TC_InitShader.
+// Declared here (before TouchControls_Shutdown uses them) and defined in
+// the DRAWING section below.
+static GLuint gTC_Program;
+static GLuint gTC_VAO;
+static GLuint gTC_VBO;
+
 // ============================================================
 // HELPERS
 // ============================================================
@@ -240,6 +247,11 @@ void TouchControls_Shutdown(void)
         SDL_CloseSensor(gTC.gyroSensor);
         gTC.gyroSensor = NULL;
     }
+
+    // Release persistent GL resources created by TC_InitShader.
+    if (gTC_VBO) { glDeleteBuffers(1, &gTC_VBO); gTC_VBO = 0; }
+    if (gTC_VAO) { glDeleteVertexArrays(1, &gTC_VAO); gTC_VAO = 0; }
+    if (gTC_Program) { glDeleteProgram(gTC_Program); gTC_Program = 0; }
 }
 
 // ============================================================
@@ -600,15 +612,25 @@ bool TouchControls_GetGameMode(void)
 // Max segments for circle drawing
 #define MAX_CIRCLE_SEGMENTS 64
 
+// Upload vertex data to the persistent TC VBO and draw.
+// gTC_VAO must be bound before calling (done once in TouchControls_Draw).
+// gTC_VBO is already associated with attrib 0 via the VAO setup in TC_InitShader.
+static void TC_DrawVerts(const float* verts, int count, GLenum mode)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, gTC_VBO);
+    glBufferData(GL_ARRAY_BUFFER, count * 2 * sizeof(float), verts, GL_DYNAMIC_DRAW);
+    // gTC_VAO already has attrib 0 configured to point at gTC_VBO (set in TC_InitShader).
+    // No need to re-issue glVertexAttribPointer -- the binding is in the VAO state.
+    glDrawArrays(mode, 0, count);
+}
+
 // Draw a filled circle using triangle fan (aspect-ratio corrected)
 static void DrawCircleFilled(float cx, float cy, float r, int segments)
 {
     if (segments > MAX_CIRCLE_SEGMENTS) segments = MAX_CIRCLE_SEGMENTS;
-    // Correct for aspect ratio: in [0..1] screen space, y covers a taller portion
-    // of the screen than x in landscape mode. To get circular dots in pixels:
-    // ry = rx * (screenW / screenH)
+    // ry corrects for landscape aspect ratio so circles appear circular in pixels.
     float ry = (gTC.screenH > 0) ? r * (float)gTC.screenW / (float)gTC.screenH : r;
-    // triangle fan: center + (segments+1) rim points, 2 floats each
+    // triangle fan: center + (segments+1) rim points
     float verts[2 + (MAX_CIRCLE_SEGMENTS + 1) * 2];
     int vi = 0;
     verts[vi++] = cx; verts[vi++] = cy;
@@ -618,17 +640,7 @@ static void DrawCircleFilled(float cx, float cy, float r, int segments)
         verts[vi++] = cx + cosf(a) * r;
         verts[vi++] = cy + sinf(a) * ry;
     }
-
-    glEnableVertexAttribArray(0);
-    // Use a simple temporary VBO
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, vi * sizeof(float), verts, GL_STREAM_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    glDrawArrays(GL_TRIANGLE_FAN, 0, vi/2);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glDeleteBuffers(1, &vbo);
+    TC_DrawVerts(verts, vi/2, GL_TRIANGLE_FAN);
 }
 
 // Draw a circle outline (aspect-ratio corrected)
@@ -643,16 +655,7 @@ static void DrawCircleOutline(float cx, float cy, float r, int segments)
         verts[i*2+0] = cx + cosf(a) * r;
         verts[i*2+1] = cy + sinf(a) * ry;
     }
-
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    glDrawArrays(GL_LINE_LOOP, 0, segments);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glDeleteBuffers(1, &vbo);
+    TC_DrawVerts(verts, segments, GL_LINE_LOOP);
 }
 
 // Returns the aspect-ratio-corrected Y scaling factor.
@@ -671,15 +674,7 @@ static void DrawCrossIcon(float cx, float cy, float s)
         cx - s, cy - ry,  cx + s, cy + ry,   // diagonal 1
         cx + s, cy - ry,  cx - s, cy + ry,   // diagonal 2
     };
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    glDrawArrays(GL_LINES, 0, 4);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glDeleteBuffers(1, &vbo);
+    TC_DrawVerts(verts, 4, GL_LINES);
 }
 
 // Draw a right-pointing triangle (play/continue icon) centered at (cx, cy) with half-size s
@@ -691,29 +686,21 @@ static void DrawPlayIcon(float cx, float cy, float s)
         cx + s, cy,        // right apex
         cx - s, cy + ry,   // bottom-left
     };
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glDeleteBuffers(1, &vbo);
+    TC_DrawVerts(verts, 3, GL_TRIANGLES);
 }
 
 // Simple 2D shader for drawing touch controls overlay
-static GLuint gTC_Program = 0;
-static GLint gTC_uColor = -1;
-static GLint gTC_uOffset = -1;
+// (gTC_Program, gTC_VAO, gTC_VBO are declared above, near gTC)
+static GLint  gTC_uColor = -1;
+static GLint  gTC_uOffset = -1;
 
 static const char* kTC_VertSrc =
 "#version 300 es\n"
-"in vec2 a_pos;\n"
+"layout(location = 0) in vec2 a_pos;\n"
 "uniform vec2 u_offset;\n"
 "void main() {\n"
 "    vec2 ndc = (a_pos + u_offset) * 2.0 - 1.0;\n"
-"    ndc.y = -ndc.y;\n"  // flip Y (screen Y increases down, NDC Y increases up)
+"    ndc.y = -ndc.y;\n"
 "    gl_Position = vec4(ndc, 0.0, 1.0);\n"
 "}\n";
 
@@ -734,7 +721,7 @@ static GLuint TC_CompileShader(GLenum type, const char* src)
     if (!ok) {
         char log[512];
         glGetShaderInfoLog(s, 512, NULL, log);
-        TC_LOG("TC shader error: %s", log);
+        TC_LOG("TC shader compile error: %s", log);
         glDeleteShader(s);
         return 0;
     }
@@ -743,21 +730,23 @@ static GLuint TC_CompileShader(GLenum type, const char* src)
 
 static void TC_InitShader(void)
 {
-    if (gTC_Program) return;
+    if (gTC_Program) return;   // already initialized
 
     GLuint vert = TC_CompileShader(GL_VERTEX_SHADER,   kTC_VertSrc);
     GLuint frag = TC_CompileShader(GL_FRAGMENT_SHADER, kTC_FragSrc);
-    if (!vert || !frag) return;
+    if (!vert || !frag) {
+        if (vert) glDeleteShader(vert);
+        if (frag) glDeleteShader(frag);
+        return;
+    }
 
     gTC_Program = glCreateProgram();
-    glBindAttribLocation(gTC_Program, 0, "a_pos");
     glAttachShader(gTC_Program, vert);
     glAttachShader(gTC_Program, frag);
     glLinkProgram(gTC_Program);
     glDeleteShader(vert);
     glDeleteShader(frag);
 
-    // Check link status. Using an unlinked program with glUseProgram generates GL_INVALID_OPERATION.
     {
         GLint ok;
         glGetProgramiv(gTC_Program, GL_LINK_STATUS, &ok);
@@ -773,6 +762,36 @@ static void TC_InitShader(void)
 
     gTC_uColor  = glGetUniformLocation(gTC_Program, "u_color");
     gTC_uOffset = glGetUniformLocation(gTC_Program, "u_offset");
+    TC_LOG("TC shader ready: prog=%u uColor=%d uOffset=%d", gTC_Program, gTC_uColor, gTC_uOffset);
+
+    // Create persistent VAO and VBO - reused every frame, never deleted during gameplay.
+    // Using a persistent VBO avoids per-draw buffer create/delete cycles that can
+    // trigger driver bugs on some Android GPUs (buffer deletion while VAO still
+    // references it leads to undefined behaviour per GLES 3.0 spec).
+    //
+    // Save GL binding state that we'll temporarily modify during VAO/VBO setup,
+    // then restore immediately so the caller's state is unaffected.
+    GLint prevVAO = 0, prevVBO = 0;
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVAO);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &prevVBO);
+
+    glGenVertexArrays(1, &gTC_VAO);
+    glGenBuffers(1, &gTC_VBO);
+
+    // Pre-configure the VAO's attrib 0 pointer to use gTC_VBO.
+    // After this setup the VAO "remembers" that attrib 0 comes from gTC_VBO;
+    // we only need to update the buffer data each draw, not re-bind attribs.
+    glBindVertexArray(gTC_VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, gTC_VBO);
+    // Pre-allocate max geometry size (triangle fan: center + MAX_CIRCLE_SEGMENTS+1 rim points).
+    // This avoids repeated orphan+reallocate cycles in TC_DrawVerts on every frame.
+    glBufferData(GL_ARRAY_BUFFER, (MAX_CIRCLE_SEGMENTS + 2) * 2 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+    // Restore previous bindings so the caller is not surprised.
+    glBindVertexArray((GLuint)prevVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)prevVBO);
 }
 
 static void TC_SetColor(float r, float g, float b, float a)
@@ -792,32 +811,35 @@ void TouchControls_Draw(void)
     TC_InitShader();
     if (!gTC_Program) return;
 
-    // Save GL state
+    // Save GL state we will modify.
     GLint savedProgram;
+    GLint savedVAO;
+    GLint savedVBO;
     GLint savedViewport[4];
-    GLboolean blendWasEnabled = glIsEnabled(GL_BLEND);
+    GLboolean blendWasEnabled     = glIsEnabled(GL_BLEND);
     GLboolean depthTestWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-    GLboolean cullFaceWasEnabled = glIsEnabled(GL_CULL_FACE);
-    glGetIntegerv(GL_CURRENT_PROGRAM, &savedProgram);
-    glGetIntegerv(GL_VIEWPORT, savedViewport);
+    GLboolean cullFaceWasEnabled  = glIsEnabled(GL_CULL_FACE);
+    glGetIntegerv(GL_CURRENT_PROGRAM,                &savedProgram);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING,           &savedVAO);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING,           &savedVBO);
+    glGetIntegerv(GL_VIEWPORT,                       savedViewport);
 
-    // Force full-screen viewport so TC overlay always covers the entire screen,
-    // regardless of which pane's viewport was active when we were called.
+    // Force full-screen viewport so the TC overlay covers the entire screen,
+    // regardless of which split-screen pane's viewport was last active.
     glViewport(0, 0, gTC.screenW, gTC.screenH);
 
     glUseProgram(gTC_Program);
     TC_SetOffset(0, 0);
 
-    // Disable depth test and cull face for 2D overlay
+    // Disable depth test and cull face for 2D overlay; enable alpha blending.
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    // Vertex array
-    GLuint vao;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
+    // Bind the persistent VAO/VBO set up in TC_InitShader.
+    // All shape-drawing functions upload into gTC_VBO and draw via gTC_VAO.
+    glBindVertexArray(gTC_VAO);
 
     float ar = (gTC.screenH > 0) ? (float)gTC.screenW / (float)gTC.screenH : 1.0f;
     float rx = JOYSTICK_RADIUS;
@@ -897,16 +919,14 @@ void TouchControls_Draw(void)
         DrawCircleOutline(gTC.gyroRecenterCX, gTC.gyroRecenterCY, gTC.gyroRecenterR, 20);
     }
 
-    // Restore state
-    glBindVertexArray(0);
-    glDeleteVertexArrays(1, &vao);
-
-    // Restore GL state
+    // Restore GL state to exactly what it was before we drew.
+    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)savedVBO);
+    glBindVertexArray((GLuint)savedVAO);
     if (depthTestWasEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     if (cullFaceWasEnabled)  glEnable(GL_CULL_FACE);  else glDisable(GL_CULL_FACE);
     if (!blendWasEnabled)    glDisable(GL_BLEND);
     glViewport(savedViewport[0], savedViewport[1], savedViewport[2], savedViewport[3]);
-    glUseProgram(savedProgram);
+    glUseProgram((GLuint)savedProgram);
 
     // Drain any GL errors generated by TouchControls drawing so they don't
     // accumulate into the next frame and get mis-attributed to other GL calls.
