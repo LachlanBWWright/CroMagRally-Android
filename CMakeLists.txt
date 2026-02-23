@@ -98,7 +98,7 @@ else()
 	# Protect against a stale SDL3_DIR=SDL3_DIR-NOTFOUND cache entry left behind
 	# by a failed find_package call from a previous CMake run (Gradle runs CMake
 	# once per ABI and reuses the same binary dir).
-	if("${SDL3_DIR}" MATCHES "NOTFOUND")
+	if("${SDL3_DIR}" MATCHES "-NOTFOUND$")
 		set(SDL3_DIR "${CMAKE_SOURCE_DIR}/extern/SDL" CACHE PATH "SDL3 source dir" FORCE)
 	endif()
 	message("Building SDL3 from source: ${SDL3_DIR}")
