@@ -722,9 +722,17 @@ void bridge_Lightfv(GLenum light, GLenum pname, const GLfloat *params)
         case 0x1202: // GL_SPECULAR
             memcpy(gLights[i].specular, params, 4 * sizeof(float)); break;
         case 0x1203: // GL_POSITION
-            // Transform into eye space (must be done at camera setup time)
-            // Position is already in eye space when glLightfv is called during camera update
-            memcpy(gLights[i].position, params, 4 * sizeof(float));
+            // OpenGL transforms light positions by the current modelview matrix.
+            // We must do the same so that directional (w=0) and point (w=1) lights
+            // end up in eye space, matching the eye-space normals in the shader.
+            {
+                const Mat4 *mv = MatStack_Top(&gMatMV);
+                float x = params[0], y = params[1], z = params[2], w = params[3];
+                gLights[i].position[0] = mv->m[0]*x + mv->m[4]*y + mv->m[8]*z  + mv->m[12]*w;
+                gLights[i].position[1] = mv->m[1]*x + mv->m[5]*y + mv->m[9]*z  + mv->m[13]*w;
+                gLights[i].position[2] = mv->m[2]*x + mv->m[6]*y + mv->m[10]*z + mv->m[14]*w;
+                gLights[i].position[3] = w;
+            }
             break;
         default:
             break;
