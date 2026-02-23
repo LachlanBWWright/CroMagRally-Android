@@ -93,11 +93,11 @@ else()
 	endif()
 	message("Building SDL3 from source: " ${SDL3_DIR})
 	add_subdirectory("${SDL3_DIR}" "${CMAKE_BINARY_DIR}/SDL3_bin" EXCLUDE_FROM_ALL)
-	# Point SDL3_DIR at our cmake/ shim so that any submodule calling
-	# find_package(SDL3) (e.g. Pomme) can find SDL3Config.cmake even though
-	# SDL3 was not installed – the shim simply checks that SDL3::SDL3 is
-	# already defined by the add_subdirectory call above.
-	set(SDL3_DIR "${CMAKE_SOURCE_DIR}/cmake" CACHE PATH "" FORCE)
+	# SDL3 generates SDL3Config.cmake in its binary output directory during cmake
+	# configuration. Point SDL3_DIR at that directory so submodules (e.g. Pomme)
+	# that call find_package(SDL3 REQUIRED) can locate it without an install step.
+	set(SDL3_DIR "${CMAKE_BINARY_DIR}/SDL3_bin" CACHE PATH "" FORCE)
+	message(STATUS "SDL3_DIR set to build tree: ${CMAKE_BINARY_DIR}/SDL3_bin")
 endif()
 
 #------------------------------------------------------------------------------
