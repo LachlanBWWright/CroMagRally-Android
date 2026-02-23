@@ -292,6 +292,11 @@ void OGL_SetupGameView(OGLSetupInputType *setupDefPtr)
 	gGameView->useFog 			= setupDefPtr->styles.useFog;
 	gGameView->clearBackBuffer 	= setupDefPtr->view.clearBackBuffer;
 	gGameView->pillarboxRatio	= setupDefPtr->view.pillarboxRatio;
+#ifdef __ANDROID__
+	// On Android use full-screen rendering (no pillarbox black bars).
+	// Pillarbox bars look like "blacked-out slices" on wide phone screens.
+	gGameView->pillarboxRatio	= PILLARBOX_RATIO_FULLSCREEN;
+#endif
 	gGameView->fadePillarbox	= false;
 	gGameView->fadeInDuration	= .25f;
 	gGameView->fadeOutDuration	= .15f;
@@ -1613,11 +1618,9 @@ static char* UpdateDebugText(void)
 static void MoveDebugText(ObjNode* theNode)
 {
 #ifdef __ANDROID__
-	// On Android, show the FPS/timestamp overlay in debug mode (gDebugMode>=1).
-	if (SetObjectVisible(theNode, gDebugMode >= 1))
-	{
-		TextMesh_Update(UpdateDebugText(), kTextMeshAlignLeft, theNode);
-	}
+	// On Android, always hide debug overlay (gDebugMode=1 is used only to skip the title screen).
+	SetObjectVisible(theNode, false);
+	(void) theNode;
 #else
 	if (SetObjectVisible(theNode, gDebugMode != 0))
 	{
