@@ -971,6 +971,12 @@ GLuint	textureName;
 		int pixelCount = width * height;
 		convertedPixels = (uint8_t*)SDL_malloc(pixelCount * 4);
 		const uint8_t *src = (const uint8_t*)imageMemory;
+		// When the caller passed GL_RGB as destFormat, the texture is intended as
+		// fully opaque (e.g. terrain super-tiles). The 1-bit alpha in BGRA1555 is
+		// often 0 for such images, which would cause every pixel to fail the
+		// always-on alpha test (GL_NOTEQUAL, 0) and make the terrain invisible.
+		// Fix: force alpha=255 for GL_RGB source textures.
+		bool forceOpaqueAlpha = (destFormat == GL_RGB);
 		for (int i = 0; i < pixelCount; i++)
 		{
 			// Little-endian 1-5-5-5 REV: stored as two bytes
@@ -983,7 +989,7 @@ GLuint	textureName;
 			convertedPixels[i*4+0] = (uint8_t)((r << 3) | (r >> 2));
 			convertedPixels[i*4+1] = (uint8_t)((g << 3) | (g >> 2));
 			convertedPixels[i*4+2] = (uint8_t)((b << 3) | (b >> 2));
-			convertedPixels[i*4+3] = a ? 0xFF : 0x00;
+			convertedPixels[i*4+3] = (a || forceOpaqueAlpha) ? 0xFF : 0x00;
 		}
 		srcFormat = GL_RGBA;
 		destFormat = GL_RGBA;

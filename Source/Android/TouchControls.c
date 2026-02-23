@@ -89,28 +89,28 @@ static void UpdateLayout(int w, int h)
     gJoyCenterY = h * 0.65f;
     gJoyRadius  = h * 0.18f;
 
-    // Right-side buttons
-    // Bottom row: Gas, Brake, Reverse  (right side, bottom)
-    // Top row: ThrowForward, ThrowBack, Camera, RearView
-    float btnR     = h * 0.065f;   // button radius
-    float rightBase = w * 0.88f;   // right column center x
-    float colGap    = btnR * 2.6f; // column gap
+    // Button radius
+    float btnR    = h * 0.065f;
 
-    // Bottom row y
-    float yBot  = h * 0.78f;
-    // Top row y
-    float yTop  = h * 0.54f;
+    // Diamond face buttons (A/B/X/Y → Gas/Reverse/ThrowBack/ThrowForward)
+    // Center of diamond: right side, mid-height
+    float cx      = w * 0.84f;
+    float cy      = h * 0.54f;
+    // Spacing equal in X and Y → proper square diamond
+    float spacing = h * 0.15f;
 
-    // Bottom row: 3 buttons
-    gBtnRegion[kTouchBtn_Gas]          = (BtnRegion){ rightBase - colGap,         yBot, btnR };
-    gBtnRegion[kTouchBtn_Brake]        = (BtnRegion){ rightBase,                  yBot, btnR };
-    gBtnRegion[kTouchBtn_Reverse]      = (BtnRegion){ rightBase + colGap,         yBot, btnR };
+    gBtnRegion[kTouchBtn_ThrowForward] = (BtnRegion){ cx,           cy - spacing, btnR };  // North / Y
+    gBtnRegion[kTouchBtn_Gas]          = (BtnRegion){ cx,           cy + spacing, btnR };  // South / A
+    gBtnRegion[kTouchBtn_ThrowBack]    = (BtnRegion){ cx - spacing, cy,           btnR };  // West  / X
+    gBtnRegion[kTouchBtn_Reverse]      = (BtnRegion){ cx + spacing, cy,           btnR };  // East  / B
 
-    // Top row: 4 buttons
-    gBtnRegion[kTouchBtn_ThrowForward] = (BtnRegion){ rightBase - colGap * 1.5f,  yTop, btnR };
-    gBtnRegion[kTouchBtn_ThrowBack]    = (BtnRegion){ rightBase - colGap * 0.5f,  yTop, btnR };
-    gBtnRegion[kTouchBtn_Camera]       = (BtnRegion){ rightBase + colGap * 0.5f,  yTop, btnR };
-    gBtnRegion[kTouchBtn_RearView]     = (BtnRegion){ rightBase + colGap * 1.5f,  yTop, btnR };
+    // Secondary buttons (smaller, around the diamond)
+    float btnRS  = btnR * 0.80f;
+    // Brake: right-trigger style, right of East button
+    gBtnRegion[kTouchBtn_Brake]        = (BtnRegion){ cx + spacing * 1.85f, cy + spacing * 0.4f, btnRS };
+    // Camera (LB) and RearView (LT): shoulder style, above diamond
+    gBtnRegion[kTouchBtn_Camera]       = (BtnRegion){ cx - spacing * 0.85f, h * 0.22f, btnRS };
+    gBtnRegion[kTouchBtn_RearView]     = (BtnRegion){ cx + spacing * 0.85f, h * 0.22f, btnRS };
 
     // Pause: top-right corner
     gBtnRegion[kTouchBtn_Pause]        = (BtnRegion){ w * 0.96f,  h * 0.08f, btnR * 0.85f };
@@ -382,9 +382,13 @@ void TouchControls_Draw(void)
     bridge_LoadIdentity();
 
     // Save and set GL state for 2D overlay
+    bool wasTexture2D = bridge_IsEnabled(GL_TEXTURE_2D);
+    bool wasAlphaTest = bridge_IsEnabled(GL_ALPHA_TEST);
     bridge_Disable(GL_DEPTH_TEST);
     bridge_Disable(GL_LIGHTING);
     bridge_Disable(GL_CULL_FACE);
+    bridge_Disable(GL_TEXTURE_2D);   // don't texture the overlay circles
+    bridge_Disable(GL_ALPHA_TEST);   // overlay has semi-transparent circles; always draw them
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     bridge_Disable(GL_FOG);
@@ -410,38 +414,39 @@ void TouchControls_Draw(void)
     bridge_Color4f(0.8f, 0.8f, 0.8f, 0.5f);
     DrawCircleOutline(thumbX, thumbY, thumbR, 20);
 
-    // --- Action Buttons ---
-    // Gas (green)
-    DrawButton(gBtnRegion[kTouchBtn_Gas].cx,          gBtnRegion[kTouchBtn_Gas].cy,
-               gBtnRegion[kTouchBtn_Gas].radius,       gBtnDown[kTouchBtn_Gas],
-               0.2f, 0.8f, 0.2f);
-
-    // Brake (red)
-    DrawButton(gBtnRegion[kTouchBtn_Brake].cx,         gBtnRegion[kTouchBtn_Brake].cy,
-               gBtnRegion[kTouchBtn_Brake].radius,     gBtnDown[kTouchBtn_Brake],
-               0.9f, 0.15f, 0.15f);
-
-    // Reverse (orange)
-    DrawButton(gBtnRegion[kTouchBtn_Reverse].cx,       gBtnRegion[kTouchBtn_Reverse].cy,
-               gBtnRegion[kTouchBtn_Reverse].radius,   gBtnDown[kTouchBtn_Reverse],
-               0.9f, 0.55f, 0.1f);
-
-    // ThrowForward (yellow)
+    // --- Diamond face buttons ---
+    // ThrowForward / Y / North (yellow) — top of diamond
     DrawButton(gBtnRegion[kTouchBtn_ThrowForward].cx,  gBtnRegion[kTouchBtn_ThrowForward].cy,
                gBtnRegion[kTouchBtn_ThrowForward].radius, gBtnDown[kTouchBtn_ThrowForward],
                0.9f, 0.85f, 0.1f);
 
-    // ThrowBack (purple)
+    // Gas / A / South (green) — bottom of diamond
+    DrawButton(gBtnRegion[kTouchBtn_Gas].cx,          gBtnRegion[kTouchBtn_Gas].cy,
+               gBtnRegion[kTouchBtn_Gas].radius,       gBtnDown[kTouchBtn_Gas],
+               0.2f, 0.8f, 0.2f);
+
+    // ThrowBack / X / West (purple) — left of diamond
     DrawButton(gBtnRegion[kTouchBtn_ThrowBack].cx,     gBtnRegion[kTouchBtn_ThrowBack].cy,
                gBtnRegion[kTouchBtn_ThrowBack].radius, gBtnDown[kTouchBtn_ThrowBack],
                0.6f, 0.1f, 0.9f);
 
-    // Camera (cyan)
+    // Reverse / B / East (orange) — right of diamond
+    DrawButton(gBtnRegion[kTouchBtn_Reverse].cx,       gBtnRegion[kTouchBtn_Reverse].cy,
+               gBtnRegion[kTouchBtn_Reverse].radius,   gBtnDown[kTouchBtn_Reverse],
+               0.9f, 0.55f, 0.1f);
+
+    // --- Secondary buttons ---
+    // Brake (red) — right trigger style
+    DrawButton(gBtnRegion[kTouchBtn_Brake].cx,         gBtnRegion[kTouchBtn_Brake].cy,
+               gBtnRegion[kTouchBtn_Brake].radius,     gBtnDown[kTouchBtn_Brake],
+               0.9f, 0.15f, 0.15f);
+
+    // Camera (cyan) — shoulder button style, above diamond
     DrawButton(gBtnRegion[kTouchBtn_Camera].cx,        gBtnRegion[kTouchBtn_Camera].cy,
                gBtnRegion[kTouchBtn_Camera].radius,    gBtnDown[kTouchBtn_Camera],
                0.1f, 0.8f, 0.9f);
 
-    // RearView (light blue)
+    // RearView (light blue) — shoulder button style, above diamond
     DrawButton(gBtnRegion[kTouchBtn_RearView].cx,      gBtnRegion[kTouchBtn_RearView].cy,
                gBtnRegion[kTouchBtn_RearView].radius,  gBtnDown[kTouchBtn_RearView],
                0.3f, 0.5f, 0.9f);
@@ -458,10 +463,12 @@ void TouchControls_Draw(void)
     bridge_MatrixMode(GL_MODELVIEW);
     bridge_PopMatrix();
 
-    // Restore state
+    // Restore GL state
     bridge_Enable(GL_DEPTH_TEST);
     bridge_Enable(GL_LIGHTING);
     bridge_Enable(GL_CULL_FACE);
+    if (wasTexture2D) bridge_Enable(GL_TEXTURE_2D);
+    if (wasAlphaTest) bridge_Enable(GL_ALPHA_TEST);
     glDisable(GL_BLEND);
 
     bridge_FlushState();

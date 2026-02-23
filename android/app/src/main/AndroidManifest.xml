@@ -10,13 +10,14 @@
         android:label="Cro-Mag Rally"
         android:icon="@mipmap/ic_launcher"
         android:hasCode="true"
+        android:resizeableActivity="false"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
 
         <activity
             android:name="io.jor.cromagrally.CroMagRallyActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|keyboard|keyboardHidden|navigation|density"
-            android:screenOrientation="sensorLandscape"
+            android:screenOrientation="landscape"
             android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
