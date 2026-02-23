@@ -238,6 +238,9 @@ retryVideo:
 
 	// Initialize touch controls and virtual gamepad
 	TouchControls_Init();
+
+	// The virtual gamepad is a gamepad, so show gamepad prompts in UI
+	gUserPrefersGamepad = true;
 #endif
 }
 
