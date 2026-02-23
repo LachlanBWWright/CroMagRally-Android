@@ -95,13 +95,13 @@ else()
 	if(NOT DEFINED SDL3_DIR)
 		set(SDL3_DIR "${CMAKE_SOURCE_DIR}/extern/SDL")
 	endif()
-	message("Building SDL3 from source: ${SDL3_DIR}")
 	# Protect against a stale SDL3_DIR=SDL3_DIR-NOTFOUND cache entry left behind
 	# by a failed find_package call from a previous CMake run (Gradle runs CMake
 	# once per ABI and reuses the same binary dir).
 	if("${SDL3_DIR}" MATCHES "NOTFOUND")
 		set(SDL3_DIR "${CMAKE_SOURCE_DIR}/extern/SDL" CACHE PATH "SDL3 source dir" FORCE)
 	endif()
+	message("Building SDL3 from source: ${SDL3_DIR}")
 	add_subdirectory("${SDL3_DIR}" "${CMAKE_BINARY_DIR}/SDL3_bin" EXCLUDE_FROM_ALL)
 	# cmake/FindSDL3.cmake (module-mode, not restricted by NDK's
 	# CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY) handles Pomme's
