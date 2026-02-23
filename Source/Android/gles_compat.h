@@ -164,6 +164,10 @@ void bridge_DrawArrays(GLenum mode, GLint first, GLsizei count);
 // Immediate mode (glBegin/glEnd) for debug rendering
 // -------------------------------------------------------------------------
 
+// GL_QUADS (0x0007) is removed in OpenGL ES; bridge_End converts quad vertex
+// groups to two triangles each.
+#define GL_QUADS 0x0007
+
 void bridge_Begin(GLenum mode);
 void bridge_End(void);
 void bridge_Vertex3f(GLfloat x, GLfloat y, GLfloat z);

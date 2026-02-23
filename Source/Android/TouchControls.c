@@ -24,6 +24,12 @@
 #include <string.h>
 #include <stdbool.h>
 
+// SDL2 constants removed in SDL3; SDL3 uses bool true/false instead
+#ifndef SDL_PRESSED
+#define SDL_PRESSED  true
+#define SDL_RELEASED false
+#endif
+
 #define LOGI(...)  __android_log_print(ANDROID_LOG_INFO,  "CroMagRally", __VA_ARGS__)
 #define LOGE(...)  __android_log_print(ANDROID_LOG_ERROR, "CroMagRally", __VA_ARGS__)
 

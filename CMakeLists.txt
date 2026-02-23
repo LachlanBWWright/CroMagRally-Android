@@ -22,6 +22,10 @@ project(${GAME_TARGET}
 option(BUILD_SDL_FROM_SOURCE "Build SDL from source" OFF)
 option(SDL_STATIC "Static link SDL" OFF)
 
+# Add cmake/ directory to MODULE_PATH so our FindSDL3.cmake is found even when
+# CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY (Android NDK toolchain).
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
 if(ANDROID)
 	set(BUILD_SDL_FROM_SOURCE ON CACHE BOOL "Build SDL from source for Android" FORCE)
 	set(SDL_STATIC OFF CACHE BOOL "Use shared SDL on Android" FORCE)
@@ -93,11 +97,16 @@ else()
 	endif()
 	message("Building SDL3 from source: " ${SDL3_DIR})
 	add_subdirectory("${SDL3_DIR}" "${CMAKE_BINARY_DIR}/SDL3_bin" EXCLUDE_FROM_ALL)
-	# SDL3 generates SDL3Config.cmake in its binary output directory during cmake
-	# configuration. Point SDL3_DIR at that directory so submodules (e.g. Pomme)
-	# that call find_package(SDL3 REQUIRED) can locate it without an install step.
-	set(SDL3_DIR "${CMAKE_BINARY_DIR}/SDL3_bin" CACHE PATH "" FORCE)
-	message(STATUS "SDL3_DIR set to build tree: ${CMAKE_BINARY_DIR}/SDL3_bin")
+	# SDL3 generates SDL3Config.cmake in its build tree during cmake configuration.
+	# Explicitly resolve find_package(SDL3) now so the result is cached in SDL3_DIR;
+	# any submodule (e.g. Pomme) that calls find_package(SDL3 REQUIRED) will then find
+	# it via the cached SDL3_DIR without needing SDL3 to be installed.
+	find_package(SDL3 CONFIG QUIET PATHS "${CMAKE_BINARY_DIR}/SDL3_bin" NO_DEFAULT_PATH)
+	if(SDL3_FOUND)
+		message(STATUS "SDL3 found in build tree: ${SDL3_DIR}")
+	else()
+		message(WARNING "SDL3 not found in build tree - Pomme find_package may fail")
+	endif()
 endif()
 
 #------------------------------------------------------------------------------
