@@ -303,6 +303,7 @@ static GLint  gUniHasVertexColors  = -1;
 
 static const char *kVertexShaderSrc =
     "#version 300 es\n"
+    "precision highp float;\n"
     "in vec3 a_position;\n"
     "in vec3 a_normal;\n"
     "in vec2 a_texcoord;\n"
@@ -1079,8 +1080,17 @@ static int UploadClientArrays(int numVerts)
         // Color (float4)
         if (cp && gColorArray.enabled)
         {
-            const float *c = (const float *)(cp + i * cs);
-            out[8] = c[0]; out[9] = c[1]; out[10] = c[2]; out[11] = c[3];
+            if (gColorArray.type == GL_UNSIGNED_BYTE)
+            {
+                const uint8_t *c = (const uint8_t *)(cp + i * cs);
+                out[8]  = c[0] / 255.0f; out[9]  = c[1] / 255.0f;
+                out[10] = c[2] / 255.0f; out[11] = c[3] / 255.0f;
+            }
+            else
+            {
+                const float *c = (const float *)(cp + i * cs);
+                out[8] = c[0]; out[9] = c[1]; out[10] = c[2]; out[11] = c[3];
+            }
         }
         else { out[8] = gCurrentColor[0]; out[9] = gCurrentColor[1]; out[10] = gCurrentColor[2]; out[11] = gCurrentColor[3]; }
     }

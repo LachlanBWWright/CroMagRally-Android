@@ -962,7 +962,8 @@ GLuint	textureName;
 
 #ifdef __ANDROID__
 	// GLES 3.0 does not support GL_BGRA+GL_UNSIGNED_SHORT_1_5_5_5_REV or GL_LUMINANCE.
-	// Convert to supported formats.
+	// It also requires format and internalformat to be compatible (not always the case
+	// when the caller passes GL_RGB as destFormat but pixels are GL_RGBA).
 	uint8_t *convertedPixels = NULL;
 	if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_SHORT_1_5_5_5_REV)
 	{
@@ -1012,6 +1013,12 @@ GLuint	textureName;
 	{
 		srcFormat = GL_RG;
 		destFormat = GL_RG8;
+	}
+	// GLES3: internalformat and format must be compatible. Promote GL_RGB
+	// internalformat to GL_RGBA when pixel data is already 4-channel RGBA.
+	if (srcFormat == GL_RGBA && destFormat == GL_RGB)
+	{
+		destFormat = GL_RGBA;
 	}
 #endif
 
