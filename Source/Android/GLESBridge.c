@@ -478,6 +478,14 @@ static GLuint LinkProgram(GLuint vs, GLuint fs)
 
 void GLESBridge_Init(void)
 {
+    // Clean up any existing GL resources from a previous Init call
+    // (OGL_InitDrawContext is called on every level transition without
+    //  an intervening GLESBridge_Shutdown, so we must free old objects here).
+    if (gShaderProgram) { glDeleteProgram(gShaderProgram); gShaderProgram = 0; }
+    if (gStreamVBO)     { glDeleteBuffers(1, &gStreamVBO); gStreamVBO = 0; }
+    if (gStreamIBO)     { glDeleteBuffers(1, &gStreamIBO); gStreamIBO = 0; }
+    if (gVAO)           { glDeleteVertexArrays(1, &gVAO);  gVAO = 0; }
+
     // Initialize matrix stacks
     MatStack_Init(&gMatMV);
     MatStack_Init(&gMatProj);
