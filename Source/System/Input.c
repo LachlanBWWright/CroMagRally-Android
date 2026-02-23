@@ -3,6 +3,7 @@
 // This file is part of Cro-Mag Rally. https://github.com/jorio/CroMagRally
 
 #include "game.h"
+#include "TouchControls.h"
 
 extern SDL_Window* gSDLWindow;
 
@@ -248,10 +249,16 @@ void DoSDLMaintenance(void)
 			/* DO SDL MAINTENANCE */
 			/**********************/
 
+	// Snapshot TC button states BEFORE events so new-press detection works.
+	TouchControls_BeginFrame();
+
 	SDL_PumpEvents();
 	SDL_Event event;
 	while (SDL_PollEvent(&event))
 	{
+		// Pass all events to touch controls on Android
+		TouchControls_ProcessEvent(&event);
+
 		switch (event.type)
 		{
 			case SDL_EVENT_QUIT:
@@ -302,6 +309,8 @@ void DoSDLMaintenance(void)
 		}
 	}
 
+	// Update touch controls state after events
+	TouchControls_EndFrame();
 
 	// Refresh the state of each individual keyboard key
 	UpdateRawKeyboardStates();
@@ -378,6 +387,12 @@ Boolean GetNeedState(int needID, int playerID)
 	GAME_ASSERT(needID >= 0);
 	GAME_ASSERT(needID < NUM_CONTROL_NEEDS);
 
+#ifdef __ANDROID__
+	// Check touch controls for player 0
+	if (playerID == 0 && TouchControls_IsNeedPressed(needID))
+		return true;
+#endif
+
 	if (gamepad->open && (gamepad->needStates[needID] & KEYSTATE_ACTIVE_BIT))
 	{
 		return true;
@@ -394,6 +409,12 @@ Boolean GetNeedState(int needID, int playerID)
 
 Boolean GetNeedStateAnyP(int needID)
 {
+#ifdef __ANDROID__
+	// Check touch controls for player 0
+	if (TouchControls_IsNeedPressed(needID))
+		return true;
+#endif
+
 	for (int i = 0; i < MAX_LOCAL_PLAYERS; i++)
 	{
 		if (gGamepads[i].open
@@ -416,6 +437,12 @@ Boolean GetNewNeedState(int needID, int playerID)
 	GAME_ASSERT(needID >= 0);
 	GAME_ASSERT(needID < NUM_CONTROL_NEEDS);
 
+#ifdef __ANDROID__
+	// Check touch controls for player 0
+	if (playerID == 0 && TouchControls_IsNeedPressedNew(needID))
+		return true;
+#endif
+
 	if (gamepad->open && gamepad->needStates[needID] == KEYSTATE_PRESSED)
 	{
 		return true;
@@ -432,6 +459,12 @@ Boolean GetNewNeedState(int needID, int playerID)
 
 Boolean GetNewNeedStateAnyP(int needID)
 {
+#ifdef __ANDROID__
+	// Check touch controls for player 0
+	if (TouchControls_IsNeedPressedNew(needID))
+		return true;
+#endif
+
 	for (int i = 0; i < MAX_LOCAL_PLAYERS; i++)
 	{
 		if (gGamepads[i].open
@@ -517,7 +550,6 @@ Boolean UserWantsOut(void)
 	return GetNewNeedStateAnyP(kNeed_UIConfirm)
 		|| GetNewNeedStateAnyP(kNeed_UIBack)
 		|| GetNewNeedStateAnyP(kNeed_UIPause)
-//		|| GetNewClickState(SDL_BUTTON_LEFT)
         ;
 }
 
@@ -544,6 +576,24 @@ Boolean IsCheatKeyComboDown(void)
 
 OGLVector2D GetAnalogSteering(int playerID)
 {
+#ifdef __ANDROID__
+	// On Android, player 0 steering comes from touch/gyro controls
+	// (additional players would use gamepads if connected)
+	if (playerID == 0)
+	{
+		TCVector2D tc = TouchControls_GetSteering();
+		// Blend with gamepad if connected
+		OGLVector2D gamepadSteering = {
+			.x = GetNeedAxis1D(kNeed_Left, kNeed_Right, playerID),
+			.y = GetNeedAxis1D(kNeed_Forward, kNeed_Backward, playerID)
+		};
+		// Use touch if there's a touch input, otherwise fall back to gamepad
+		float touchMag = tc.x * tc.x + tc.y * tc.y;
+		if (touchMag > 0.01f)
+			return (OGLVector2D){ .x = tc.x, .y = tc.y };
+		return gamepadSteering;
+	}
+#endif
 	return (OGLVector2D)
 	{
 		.x = GetNeedAxis1D(kNeed_Left, kNeed_Right, playerID),

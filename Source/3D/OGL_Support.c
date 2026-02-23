@@ -13,7 +13,12 @@
 #include "game.h"
 #include "stb_image.h"
 #include "pillarbox.h"
+#ifndef __ANDROID__
 #include <SDL3/SDL_opengl.h>
+#endif
+#ifdef __ANDROID__
+#include "TouchControls.h"
+#endif
 #include <math.h>
 
 extern SDL_Window*		gSDLWindow;
@@ -102,6 +107,8 @@ void OGL_Boot(void)
 	OGL_CreateDrawContext();
 	OGL_CheckError();
 
+	bridge_Init();  // Must be called AFTER GL context creation
+
 	OGL_InitDrawContext();
 	OGL_CheckError();
 
@@ -142,6 +149,7 @@ void OGL_Boot(void)
 
 void OGL_Shutdown(void)
 {
+	bridge_Shutdown();
 	OGL_DisposeDrawContext();
 }
 
@@ -284,6 +292,11 @@ void OGL_SetupGameView(OGLSetupInputType *setupDefPtr)
 	gGameView->useFog 			= setupDefPtr->styles.useFog;
 	gGameView->clearBackBuffer 	= setupDefPtr->view.clearBackBuffer;
 	gGameView->pillarboxRatio	= setupDefPtr->view.pillarboxRatio;
+#ifdef __ANDROID__
+	// On Android use full-screen rendering (no pillarbox black bars).
+	// Pillarbox bars look like "blacked-out slices" on wide phone screens.
+	gGameView->pillarboxRatio	= PILLARBOX_RATIO_FULLSCREEN;
+#endif
 	gGameView->fadePillarbox	= false;
 	gGameView->fadeInDuration	= .25f;
 	gGameView->fadeOutDuration	= .15f;
@@ -599,6 +612,17 @@ void OGL_DrawScene(void (*drawRoutine)(void))
 				/* DRAW EACH SPLIT-SCREEN PANE IF ANY */
 				/**************************************/
 
+#ifdef __ANDROID__
+	// Drain any GL errors accumulated from setup or the previous frame before
+	// calling the draw routine. This prevents stale errors from being
+	// mis-attributed to the first OGL_CheckError() in the draw path (e.g. MetaObjects.c).
+	{
+		GLenum _e;
+		while ((_e = glGetError()) != GL_NO_ERROR)
+			SDL_Log("OGL_DrawScene: draining stale GL error 0x%x before draw", (unsigned)_e);
+	}
+#endif
+
 	int numPasses = gNumSplitScreenPanes + 1;
 	gDrawingOverlayPane = false;
 
@@ -645,6 +669,12 @@ void OGL_DrawScene(void (*drawRoutine)(void))
             /**************/
 			/* END RENDER */
 			/**************/
+
+           /* DRAW TOUCH CONTROLS OVERLAY ON ANDROID */
+#ifdef __ANDROID__
+	TouchControls_SetGameMode((bool)gIsInGame);
+	TouchControls_Draw();
+#endif
 
            /* SWAP THE BUFFS */
 
@@ -881,14 +911,29 @@ static void OGL_FixTextureGamma(uint8_t* imageMemory, int width, int height, GLi
 			}
 			break;
 
+		case GL_BGR:
+			if (dataType == GL_UNSIGNED_BYTE)
+			{
+				for (int i = 0; i < 3 * width * height; i += 3)
+				{
+					imageMemory[i+0] = gGammaRamp8[imageMemory[i+0]]; // B
+					imageMemory[i+1] = gGammaRamp8[imageMemory[i+1]]; // G
+					imageMemory[i+2] = gGammaRamp8[imageMemory[i+2]]; // R
+				}
+				return;
+			}
+			break;
+
 		case GL_BGRA:
 			if (dataType == GL_UNSIGNED_BYTE)
 			{
+				// BGRA byte order: B=0, G=1, R=2, A=3
+				// Apply gamma only to colour channels (B, G, R), not alpha.
 				for (int i = 0; i < 4 * width * height; i += 4)
 				{
-					imageMemory[i+1] = gGammaRamp8[imageMemory[i+1]];
-					imageMemory[i+2] = gGammaRamp8[imageMemory[i+2]];
-					imageMemory[i+3] = gGammaRamp8[imageMemory[i+3]];
+					imageMemory[i+0] = gGammaRamp8[imageMemory[i+0]]; // B
+					imageMemory[i+1] = gGammaRamp8[imageMemory[i+1]]; // G
+					imageMemory[i+2] = gGammaRamp8[imageMemory[i+2]]; // R
 				}
 				return;
 			}
@@ -921,6 +966,15 @@ GLuint	textureName;
 
 			/* GET A UNIQUE TEXTURE NAME & INITIALIZE IT */
 
+#ifdef __ANDROID__
+	// Drain any stale GL errors accumulated from previous unchecked calls
+	// (e.g. glTexParameteri calls that have no OGL_CheckError after them).
+	// Async driver pipelines on Android may report these errors late, causing
+	// them to be mis-attributed to glGenTextures here.
+	{ GLenum _e; while ((_e = glGetError()) != GL_NO_ERROR) {
+		SDL_Log("OGL_TextureMap_Load: flushing stale GL error 0x%x before glGenTextures", _e); } }
+#endif
+
 	glGenTextures(1, &textureName);
 	if (OGL_CheckError())
 		DoFatalAlert("OGL_TextureMap_Load: glGenTextures failed!");
@@ -942,6 +996,200 @@ GLuint	textureName;
 		OGL_FixTextureGamma(imageMemory, width, height, srcFormat, dataType);
 	}
 
+#ifdef __ANDROID__
+	// GLES 3.0 texture format compatibility fixes.
+	// Many desktop GL formats are either unavailable or require extensions on GLES 3.0.
+	// Named constants for packed/sized formats not defined in GLES 3.0 headers.
+#	define GLES_UNSIGNED_INT_8_8_8_8_REV  0x8367u  // GL_UNSIGNED_INT_8_8_8_8_REV
+#	define GLES_SRGB8_ALPHA8              0x8C43u  // GL_SRGB8_ALPHA8
+#	define GLES_RGB8                      0x8051u  // GL_RGB8
+#	define GLES_SRGB8                     0x8C41u  // GL_SRGB8
+	uint8_t* convertedPixels = NULL;
+	// Remember the original destFormat before any conversions.
+	// If the caller passed GL_RGB (no alpha intended), we must force alpha=255 after
+	// any RGBA conversion to avoid the alpha test discarding all opaque fragments.
+	// On desktop GL, sampling a GL_RGB texture always returns alpha=1.0; we must
+	// reproduce that behaviour on GLES where we promote RGB→RGBA internally.
+	const GLint originalDestFormat = destFormat;
+
+	// --- BGR (3 bytes per pixel, no alpha): not valid in GLES 3.0; convert to RGBA ---
+	if (srcFormat == GL_BGR && dataType == GL_UNSIGNED_BYTE)
+	{
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (!convertedPixels)
+		{
+			SDL_Log("OGL_TextureMap_Load: OOM converting BGR→RGBA (%dx%d)", width, height);
+			return 0;
+		}
+		const uint8_t* src = (const uint8_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		for (int i = 0; i < numPixels; i++, src += 3, dst += 4)
+		{
+			dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0]; dst[3] = 255; // BGR→RGBA opaque
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+	}
+	// --- BGRA: not a core GLES 3.0 format; must convert to RGBA ---
+	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_BYTE)
+	{
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (!convertedPixels)
+		{
+			SDL_Log("OGL_TextureMap_Load: OOM converting BGRA→RGBA (%dx%d)", width, height);
+			return 0;
+		}
+		const uint8_t* src = (const uint8_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		for (int i = 0; i < numPixels; i++, src += 4, dst += 4)
+		{
+			dst[0] = src[2]; dst[1] = src[1]; dst[2] = src[0];
+			dst[3] = (originalDestFormat == GL_RGB) ? 255 : src[3];
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+	}
+	else if (srcFormat == GL_BGRA && dataType == GL_UNSIGNED_SHORT_1_5_5_5_REV)
+	{
+		// Convert 16-bit 1_5_5_5_REV packed BGRA to 32-bit RGBA UNSIGNED_BYTE.
+		// GL_UNSIGNED_SHORT_1_5_5_5_REV bit layout (after little-endian byteswap on Android):
+		//   bits  0-4  = B (5 bits, component 0 for BGRA)
+		//   bits  5-9  = G (5 bits, component 1 for BGRA)
+		//   bits 10-14 = R (5 bits, component 2 for BGRA)
+		//   bit  15    = A (1 bit,  component 3 for BGRA)
+		// IMPORTANT: terrain textures are loaded with destFormat=GL_RGB (no alpha), meaning
+		// the 1-bit alpha field in the source data is meaningless / may be 0. Force alpha=255
+		// whenever the original destFormat did not intend to carry alpha information.
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (!convertedPixels)
+		{
+			SDL_Log("OGL_TextureMap_Load: OOM converting 1_5_5_5_REV→RGBA (%dx%d)", width, height);
+			return 0;
+		}
+		const uint16_t* src16 = (const uint16_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		// Force alpha=255 when destFormat was GL_RGB (opaque, no alpha channel intended).
+		// On desktop GL, sampling a GL_RGB texture always yields alpha=1.0. Reproduce that
+		// here: the 1-bit alpha in xRGB1555 terrain data may be 0 (unused), so never
+		// trust it for textures that were declared opaque.
+		for (int i = 0; i < numPixels; i++, src16++, dst += 4)
+		{
+			uint16_t px = *src16;
+			uint8_t b = (uint8_t)((px & 0x001F) << 3);
+			uint8_t g = (uint8_t)(((px >> 5)  & 0x1F) << 3);
+			uint8_t r = (uint8_t)(((px >> 10) & 0x1F) << 3);
+			uint8_t a = (originalDestFormat == GL_RGB) ? 255
+			          : (uint8_t)(((px >> 15) & 0x1) ? 255 : 0);
+			dst[0] = r; dst[1] = g; dst[2] = b; dst[3] = a;
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+		dataType = GL_UNSIGNED_BYTE;
+	}
+	// --- GL_UNSIGNED_INT_8_8_8_8_REV: 32-bit BGRA packed int, Mac-only, not in GLES 3.0 ---
+	else if (srcFormat == GL_BGRA && dataType == (GLint)GLES_UNSIGNED_INT_8_8_8_8_REV)
+	{
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (!convertedPixels)
+		{
+			SDL_Log("OGL_TextureMap_Load: OOM converting 8_8_8_8_REV→RGBA (%dx%d)", width, height);
+			return 0;
+		}
+		const uint32_t* src32 = (const uint32_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		for (int i = 0; i < numPixels; i++, src32++, dst += 4)
+		{
+			uint32_t px = *src32;
+			dst[0] = (uint8_t)((px >> 24) & 0xFF); // R
+			dst[1] = (uint8_t)((px >> 16) & 0xFF); // G
+			dst[2] = (uint8_t)((px >>  8) & 0xFF); // B
+			dst[3] = (originalDestFormat == GL_RGB) ? 255 : (uint8_t)(px & 0xFF); // A
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+		dataType = GL_UNSIGNED_BYTE;
+	}
+	// --- GL_LUMINANCE / GL_LUMINANCE_ALPHA: not valid in core GLES 3.0 ---
+	// Expand luminance (1-channel) to RGBA by replicating across RGB channels.
+	else if ((srcFormat == GL_LUMINANCE || srcFormat == GL_LUMINANCE_ALPHA)
+			 && dataType == GL_UNSIGNED_BYTE)
+	{
+		int channels = (srcFormat == GL_LUMINANCE) ? 1 : 2;
+		int numPixels = width * height;
+		convertedPixels = (uint8_t*) SDL_malloc(numPixels * 4);
+		if (!convertedPixels)
+		{
+			SDL_Log("OGL_TextureMap_Load: OOM converting LUMINANCE→RGBA (%dx%d)", width, height);
+			return 0;
+		}
+		const uint8_t* src = (const uint8_t*) imageMemory;
+		uint8_t* dst = convertedPixels;
+		for (int i = 0; i < numPixels; i++, src += channels, dst += 4)
+		{
+			uint8_t l = src[0];
+			uint8_t a = (channels == 2) ? src[1] : 255;
+			dst[0] = l; dst[1] = l; dst[2] = l; dst[3] = a;
+		}
+		imageMemory = convertedPixels;
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+		dataType = GL_UNSIGNED_BYTE;
+	}
+
+	// --- GLES 3.0 Table 8.2: GL_RGB5_A1 / GL_RGBA4 with GL_UNSIGNED_BYTE is allowed
+	//     by the spec but some drivers reject it; fall back to GL_RGBA ---
+	if (dataType == GL_UNSIGNED_BYTE && (destFormat == GL_RGB5_A1 || destFormat == GL_RGBA4))
+	{
+		destFormat = GL_RGBA;
+	}
+
+	// --- GLES 3.0: for unsized internal formats, internalformat must equal the base format.
+	//     e.g. internalformat=GL_RGB with format=GL_RGBA → GL_INVALID_OPERATION.
+	//     Align destFormat with srcFormat when there is a mismatch.
+	if (dataType == GL_UNSIGNED_BYTE && srcFormat != (GLenum)destFormat &&
+		(destFormat == GL_RGB || destFormat == GL_RGBA))
+	{
+		destFormat = (GLint)srcFormat;
+	}
+
+	// --- Sized internal formats are not valid as the external *format* parameter.
+	//     If srcFormat (the external format) is a sized format, map it to its base format.
+	if (srcFormat == GL_RGBA8 || srcFormat == (GLint)GLES_SRGB8_ALPHA8)
+	{
+		srcFormat = GL_RGBA;
+	}
+	else if (srcFormat == (GLint)GLES_RGB8 || srcFormat == (GLint)GLES_SRGB8)
+	{
+		srcFormat = GL_RGB;
+	}
+
+	// --- Final safety: any unrecognized srcFormat will cause GL_INVALID_ENUM from glTexImage2D;
+	//     log it and fall back to GL_RGBA so the app keeps running.
+	//     The complete set of GLES 3.0 base formats accepted by glTexImage2D is:
+	//     GL_RED, GL_RG, GL_RGB, GL_RGBA, GL_DEPTH_COMPONENT, GL_DEPTH_STENCIL.
+	//     Anything else is either GLES 2.0-only or desktop-only and must be converted above.
+	if (srcFormat != GL_RGBA && srcFormat != GL_RGB && srcFormat != GL_RED &&
+		srcFormat != GL_RG && srcFormat != GL_DEPTH_COMPONENT && srcFormat != GL_DEPTH_STENCIL)
+	{
+		SDL_Log("OGL_TextureMap_Load: unrecognized GLES3 srcFormat 0x%x (destFormat 0x%x dataType 0x%x) -- falling back to GL_RGBA",
+				(unsigned)srcFormat, (unsigned)destFormat, (unsigned)dataType);
+		srcFormat = GL_RGBA;
+		destFormat = GL_RGBA;
+	}
+#	undef GLES_UNSIGNED_INT_8_8_8_8_REV
+#	undef GLES_SRGB8_ALPHA8
+#	undef GLES_RGB8
+#	undef GLES_SRGB8
+#endif
+
 	glTexImage2D(GL_TEXTURE_2D,
 				0,										// mipmap level
 				destFormat,								// format in OpenGL
@@ -952,11 +1200,17 @@ GLuint	textureName;
 				dataType,								// size of each r,g,b
 				imageMemory);							// pointer to the actual texture pixels
 
+#ifdef __ANDROID__
+	if (convertedPixels)
+		SDL_free(convertedPixels);
+#endif
+
 
 			/* SEE IF RAN OUT OF MEMORY WHILE COPYING TO OPENGL */
 
 	if (OGL_CheckError())
-		DoFatalAlert("OGL_TextureMap_Load: glTexImage2D failed!");
+		DoFatalAlert("OGL_TextureMap_Load: glTexImage2D failed! (internalFmt=0x%x srcFmt=0x%x type=0x%x size=%dx%d)",
+					 (unsigned)destFormat, (unsigned)srcFormat, (unsigned)dataType, width, height);
 
 
 				/* SET THIS TEXTURE AS CURRENTLY ACTIVE FOR DRAWING */
@@ -1166,8 +1420,6 @@ OGLLightDefType	*lights;
 	UpdateListenerLocation();
 }
 
-
-
 #pragma mark -
 
 
@@ -1318,12 +1570,13 @@ void OGL_DisableLighting(void)
 
 static char* UpdateDebugText(void)
 {
-	static char debugTextBuffer[256];
+	static char debugTextBuffer[512];
 	extern short gNumFreeSupertiles;
 	extern int gFreeTwitches;
 
 	SDL_snprintf(debugTextBuffer, sizeof(debugTextBuffer),
-		"FPS:\t%d"
+		"BUILD:\t" __DATE__ "\v " __TIME__
+		"\nFPS:\t%d"
 		"\nTRIS:\t%d"
 		"\nOBJS:\t%d"
 		"\nVRAM:\t%d\vK"
@@ -1364,10 +1617,16 @@ static char* UpdateDebugText(void)
 
 static void MoveDebugText(ObjNode* theNode)
 {
+#ifdef __ANDROID__
+	// On Android, always hide debug overlay (gDebugMode=1 is used only to skip the title screen).
+	SetObjectVisible(theNode, false);
+	(void) theNode;
+#else
 	if (SetObjectVisible(theNode, gDebugMode != 0))
 	{
 		TextMesh_Update(UpdateDebugText(), kTextMeshAlignLeft, theNode);
 	}
+#endif
 }
 
 static void InitDebugText(void)
