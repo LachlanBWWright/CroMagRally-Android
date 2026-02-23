@@ -23,9 +23,12 @@
 #define LOGE(...)  __android_log_print(ANDROID_LOG_ERROR, "CroMagRally", __VA_ARGS__)
 
 // Version file: if this file exists and contains our version, skip extraction.
-// Bump this string whenever the Data/ directory contents change.
+// Uses GAME_VERSION so it is always in sync with the game build.
 #define EXTRACT_VERSION_FILE  ".extract_version"
-#define EXTRACT_VERSION       "3.0.2"
+#ifndef GAME_VERSION
+#define GAME_VERSION "3.0.2"
+#endif
+#define EXTRACT_VERSION       GAME_VERSION
 
 // -------------------------------------------------------------------------
 // Complete list of all game data files, relative to the Data/ root.
