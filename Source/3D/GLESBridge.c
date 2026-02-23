@@ -1152,16 +1152,6 @@ static void DrawVertexArrays(GLenum mode, int count, GLenum indexType, const voi
         return;
     }
 
-    // One-time heartbeat: log first successful draw call to confirm bridge is working
-    static bool sBridgeHeartbeat = false;
-    if (!sBridgeHeartbeat) {
-        sBridgeHeartbeat = true;
-        BRIDGE_LOG("bridge: first DrawVertexArrays call (mode=%u count=%d lighting=%d tex=%d alphaTest=%d alphaFunc=%d)",
-            (unsigned)mode, count,
-            (int)gBridge.lightingEnabled, (int)gBridge.textureEnabled,
-            (int)gBridge.alphaTestEnabled, gBridge.alphaFunc);
-    }
-
     // Build packed interleaved vertices
     ImmVertex* verts = gBridge.immVerts;
     const uint8_t* posPtr  = (const uint8_t*)gBridge.vaPtrs[0];

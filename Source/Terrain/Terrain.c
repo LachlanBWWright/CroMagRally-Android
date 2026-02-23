@@ -882,16 +882,6 @@ uint32_t			pictRowBytes;
 
 	OGL_PopState();
 
-#ifdef __ANDROID__
-	{
-		static int sTerrainLogCounter = 0;
-		if (++sTerrainLogCounter <= 10)  // log first 10 frames to see supertile count stabilize
-		{
-			SDL_Log("DrawTerrain[frame=%d pane=%d]: %d supertiles drawn", sTerrainLogCounter, (int)gCurrentSplitScreenPane, (int)gNumSuperTilesDrawn);
-		}
-	}
-#endif
-
 
 		/* DRAW OBJECTS */
 
