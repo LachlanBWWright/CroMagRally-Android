@@ -246,6 +246,7 @@ void bridge_FlushState(void);
 // Current color
 #define glColor4f           bridge_Color4f
 #define glColor4fv          bridge_Color4fv
+#define glColor3f(r,g,b)    bridge_Color4f((r),(g),(b),1.0f)
 
 // Draw calls
 #define glDrawElements      bridge_DrawElements

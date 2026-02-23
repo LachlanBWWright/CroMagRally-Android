@@ -38,4 +38,4 @@ else()
     endif()
 endif()
 
-set(SDL3_VERSION "3.0.0")
+set(SDL3_VERSION "3.0.0")  # placeholder; version doesn't matter – targets already exist

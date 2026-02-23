@@ -1083,7 +1083,7 @@ static int UploadClientArrays(int numVerts)
             if (gColorArray.type == GL_UNSIGNED_BYTE)
             {
                 const uint8_t *c = (const uint8_t *)(cp + i * cs);
-                out[8]  = c[0] / 255.0f; out[9]  = c[1] / 255.0f;
+                out[8] = c[0] / 255.0f; out[9] = c[1] / 255.0f;
                 out[10] = c[2] / 255.0f; out[11] = c[3] / 255.0f;
             }
             else
