@@ -22,6 +22,8 @@ typedef struct
 
 //============================================
 
+extern Boolean gDisableFenceCollision;	// set true to disable fence collision (cheat / editor mode)
+
 ObjNode* PrimeFences(void);
 void DoFenceCollision(ObjNode *theNode);
 void DisposeFences(void);

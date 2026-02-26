@@ -95,7 +95,9 @@ endif()
 
 add_subdirectory(extern/Pomme)
 
-find_package(OpenGL REQUIRED)
+if(NOT EMSCRIPTEN)
+	find_package(OpenGL REQUIRED)
+endif()
 
 #------------------------------------------------------------------------------
 # EXECUTABLE TARGET
@@ -212,7 +214,11 @@ else()
 endif()
 
 # Link core dependencies
-target_link_libraries(${GAME_TARGET} PRIVATE Pomme OpenGL::GL)
+if(EMSCRIPTEN)
+	target_link_libraries(${GAME_TARGET} PRIVATE Pomme)
+else()
+	target_link_libraries(${GAME_TARGET} PRIVATE Pomme OpenGL::GL)
+endif()
 
 # Add required frameworks for KillMacMouseAcceleration
 if(APPLE)
@@ -314,3 +320,39 @@ endif()
 
 # Copy documentation to output folder
 configure_file(${CMAKE_SOURCE_DIR}/packaging/ReadMe.txt.in ${CMAKE_CURRENT_BINARY_DIR}/ReadMe.txt)
+
+#------------------------------------------------------------------------------
+# EMSCRIPTEN / WEBASSEMBLY
+#------------------------------------------------------------------------------
+
+if(EMSCRIPTEN)
+	set(WASM_SHELL_FILE "${CMAKE_SOURCE_DIR}/packaging/emscripten/shell.html")
+
+	# Emscripten output: produce .html + .js + .wasm
+	set_target_properties(${GAME_TARGET} PROPERTIES SUFFIX ".html")
+
+	target_compile_options(${GAME_TARGET} PRIVATE
+		-sUSE_SDL=3
+	)
+
+	target_link_options(${GAME_TARGET} PRIVATE
+		# Use SDL3 from Emscripten ports
+		-sUSE_SDL=3
+		# WebGL 1.0 (OpenGL ES 2.0 equivalent)
+		-sFULL_ES2=1
+		# Allow large memory heap (game loads all level art)
+		-sINITIAL_MEMORY=256MB
+		-sALLOW_MEMORY_GROWTH=1
+		# Preload the entire Data directory into the virtual FS
+		--preload-file "${GAME_DATADIR}@/Data"
+		# Export extra WASM functions callable from JS (cheat interface)
+		-sEXPORTED_FUNCTIONS=_main,_WASM_SetFenceCollision,_WASM_GetFenceCollision
+		-sEXPORTED_RUNTIME_METHODS=ccall,cwrap
+		# Custom HTML shell
+		--shell-file "${WASM_SHELL_FILE}"
+		# Enable exceptions (game uses C++ exceptions internally)
+		-fexceptions
+		-sNO_DISABLE_EXCEPTION_CATCHING
+	)
+endif()
+

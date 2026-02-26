@@ -115,6 +115,8 @@ typedef struct
 	int		vsync;
 	int		bootToTrack;
 	int		car;
+	char	levelOverridePath[512];		// if set, override the terrain file for the booted track
+	int		noFenceCollision;			// cheat: disable fence collision
 } CommandLineOptions;
 
 //=================================================

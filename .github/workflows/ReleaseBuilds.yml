@@ -1,23 +1,223 @@
 name: Make Release Builds
 
-on: [workflow_dispatch]
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write       # create/update GitHub releases
+  pages: write          # deploy to GitHub Pages
+  id-token: write       # OIDC for Pages deployment
 
 jobs:
+
+  # --------------------------------------------------------------------------
+  # WebAssembly (Emscripten) build
+  # --------------------------------------------------------------------------
+  build-wasm:
+    name: WebAssembly
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {submodules: 'recursive'}
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y python3 cmake
+
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.69'
+
+      - name: Configure (Emscripten)
+        run: |
+          emcmake cmake \
+            -S . -B build-wasm \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SDL_FROM_SOURCE=OFF \
+            -DCMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+
+      - name: Build (Emscripten)
+        run: cmake --build build-wasm --parallel
+
+      - name: Collect WASM artefacts
+        run: |
+          mkdir -p dist-wasm/game
+          cp build-wasm/CroMagRally.html dist-wasm/game/
+          cp build-wasm/CroMagRally.js   dist-wasm/game/
+          cp build-wasm/CroMagRally.wasm dist-wasm/game/
+          cp build-wasm/CroMagRally.data dist-wasm/game/ 2>/dev/null || true
+          cp docs/index.html dist-wasm/
+
+      - name: Upload WASM artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CroMagRally-wasm
+          path: dist-wasm/
+          compression-level: 0
+
+      - name: Upload GitHub Pages artefact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-wasm/
+
+  # --------------------------------------------------------------------------
+  # Deploy to GitHub Pages
+  # --------------------------------------------------------------------------
+  deploy-pages:
+    name: Deploy to GitHub Pages
+    needs: build-wasm
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  # --------------------------------------------------------------------------
+  # Android build
+  # --------------------------------------------------------------------------
+  build-android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: {submodules: 'recursive'}
+
+      - name: Check for Android project
+        id: android-check
+        run: |
+          if [ -d android ]; then
+            echo "present=true" >> $GITHUB_OUTPUT
+          else
+            echo "present=false" >> $GITHUB_OUTPUT
+            echo "Android project not found – skipping build."
+          fi
+
+      - name: Set up JDK 17
+        if: steps.android-check.outputs.present == 'true'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Clone SDL3 for Android
+        if: steps.android-check.outputs.present == 'true'
+        run: git clone --depth 1 https://github.com/libsdl-org/SDL.git extern/SDL
+
+      - name: Copy SDL Java bridge
+        if: steps.android-check.outputs.present == 'true'
+        run: |
+          mkdir -p android/app/src/main/java/org/libsdl/app
+          cp extern/SDL/android-project/app/src/main/java/org/libsdl/app/*.java \
+             android/app/src/main/java/org/libsdl/app/
+
+      - name: Set up Android SDK
+        if: steps.android-check.outputs.present == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licences
+        if: steps.android-check.outputs.present == 'true'
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install CMake and NDK
+        if: steps.android-check.outputs.present == 'true'
+        run: |
+          sdkmanager "cmake;3.22.1"
+          sdkmanager "ndk;27.2.12479018"
+
+      - name: Build Debug APK
+        if: steps.android-check.outputs.present == 'true'
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Upload Android artefact
+        if: steps.android-check.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CroMagRally-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          compression-level: 0
+
+  # --------------------------------------------------------------------------
+  # Publish GitHub Releases (WASM + Android)
+  # --------------------------------------------------------------------------
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-wasm, build-android]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download WASM artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: CroMagRally-wasm
+          path: release-assets/wasm
+
+      - name: Download Android artefact
+        uses: actions/download-artifact@v4
+        with:
+          name: CroMagRally-android-debug
+          path: release-assets/android
+        continue-on-error: true
+
+      - name: Zip WASM bundle
+        run: |
+          cd release-assets/wasm
+          zip -r ../../CroMagRally-wasm.zip .
+
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="latest"
+          TITLE="Latest Build"
+          NOTES="Automatically published from the latest commit on \`master\`.
+
+          Commit: ${{ github.sha }}
+          Built: $(date -u '+%Y-%m-%d %H:%M UTC')
+
+          **WebAssembly**: playable in-browser via GitHub Pages.
+          **Android**: debug APK (if android project is present)."
+
+          gh release delete "$TAG" --yes --repo "${{ github.repository }}" 2>/dev/null || true
+          git push --delete origin "refs/tags/$TAG"                         2>/dev/null || true
+
+          ASSETS="CroMagRally-wasm.zip"
+          APK=$(ls release-assets/android/*.apk 2>/dev/null | head -1)
+          if [ -n "$APK" ]; then ASSETS="$ASSETS $APK"; fi
+
+          gh release create "$TAG" $ASSETS \
+            --repo "${{ github.repository }}" \
+            --title "$TITLE" \
+            --notes "$NOTES" \
+            --prerelease
+
+  # --------------------------------------------------------------------------
+  # Desktop builds (unchanged from original workflow)
+  # --------------------------------------------------------------------------
   build-linux-appimage:
     runs-on: ${{ matrix.platform.os }}
     timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
-        platform:  # Use oldest available Ubuntu for maximum glibc compatibility
+        platform:
           - { name: x86_64, os: ubuntu-22.04 }
           - { name: aarch64, os: ubuntu-22.04-arm }
     steps:
       - uses: actions/checkout@v4
         with: {submodules: 'recursive'}
       - name: Get build dependencies from APT
-        # cf. https://github.com/libsdl-org/SDL/blob/main/docs/README-linux.md
-        # + desktop-file-utils for appimagetool
         run: |
           sudo apt update
           sudo apt install -y libasound2-dev libpulse-dev \
@@ -58,7 +258,7 @@ jobs:
           compression-level: 0
 
   build-macos:
-    runs-on: macos-latest  # as of January 2025, this still supports the macOS 10.13 deployment target
+    runs-on: macos-latest
     timeout-minutes: 15
     env:
       CODE_SIGN_IDENTITY: ${{ secrets.APPLE_CODE_SIGN_IDENTITY }}
