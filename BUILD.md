@@ -10,7 +10,16 @@ cd CroMagRally
 python3 build.py
 ```
 
-If you want to build the game **manually** instead, the rest of this document describes how to do just that on each of the big 3 desktop operating systems.
+To build the **WebAssembly** version, install [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) first, then activate it before running `build.py`:
+
+```
+source /path/to/emsdk/emsdk_env.sh
+python3 build.py
+```
+
+`build.py` automatically detects `emcmake` in your PATH and switches to the Emscripten project class.
+
+If you want to build the game **manually** instead, the rest of this document describes how to do just that on each of the big 3 desktop operating systems, plus WebAssembly.
 
 ## How to build the game manually on macOS
 
@@ -73,3 +82,49 @@ If you want to build the game **manually** instead, the rest of this document de
     ```
     If you'd like to enable runtime sanitizers, append `-DSANITIZE=1` to the **first** `cmake` call above.
 1. The game gets built in `build/CroMagRally`. Enjoy!
+
+## How to build the WebAssembly version
+
+1. Install [Emscripten](https://emscripten.org/docs/getting_started/downloads.html) (version 3.1.69 or newer is recommended).
+1. Clone the repo **recursively**:
+    ```
+    git clone --recurse-submodules https://github.com/jorio/CroMagRally
+    cd CroMagRally
+    ```
+1. Activate the Emscripten environment:
+    ```
+    source /path/to/emsdk/emsdk_env.sh
+    ```
+1. Configure and build:
+    ```
+    emcmake cmake -S . -B build-wasm -DCMAKE_BUILD_TYPE=Release -DBUILD_SDL_FROM_SOURCE=OFF
+    cmake --build build-wasm --parallel
+    ```
+1. The output files (`CroMagRally.html`, `CroMagRally.js`, `CroMagRally.wasm`, `CroMagRally.data`) are in `build-wasm/`.
+1. Serve the `build-wasm/` directory with a web server (e.g. `python3 -m http.server 8000`) and open `CroMagRally.html` in a browser.
+
+### Level-editor URL parameters
+
+When running the WebAssembly build in a browser, you can use URL query parameters to control the boot behaviour:
+
+| Parameter | Example | Description |
+|---|---|---|
+| `track` | `?track=3` | 1-based track number to load (default: 1) |
+| `car` | `?car=2` | 1-based car index (default: 1) |
+| `noFenceCollision` | `?noFenceCollision=1` | Disable fence collision physics |
+| `levelOverride` | `?levelOverride=:Terrain:MyLevel.ter` | Load a custom terrain file instead of the built-in one |
+
+### JavaScript cheat/editor API
+
+The WebAssembly build exposes a JavaScript API for controlling game state at runtime:
+
+```javascript
+// Disable / enable fence collisions
+GameCheat.setFenceCollision(0);   // disable
+GameCheat.setFenceCollision(1);   // enable
+
+// Query current state
+GameCheat.getFenceCollision();    // returns 0 or 1
+```
+
+The `loadLevelOverride(arrayBuffer, virtualPath)` helper (available in the page after the game loads) can be used to inject a custom `.ter` terrain file into the virtual filesystem. The game will use it on next page reload with the `?levelOverride=...` parameter.

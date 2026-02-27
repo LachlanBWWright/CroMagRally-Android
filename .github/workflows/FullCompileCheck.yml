@@ -6,7 +6,7 @@ jobs:
   full-compile-check:
     name: ${{ matrix.platform.name }}
     runs-on: ${{ matrix.platform.os }}
-    timeout-minutes: 5
+    timeout-minutes: 30
 
     strategy:
       fail-fast: false
@@ -16,15 +16,28 @@ jobs:
           - { name: Linux/Clang, os: ubuntu-latest, extraflags: "--system-sdl", prefix: "CC=clang CXX=clang++"}
           - { name: Windows/VS2022, os: windows-2022, extraflags: "-G 'Visual Studio 17 2022'" }
           - { name: Mac, os: macos-latest }
+          - { name: WebAssembly, os: ubuntu-latest, wasm: true }
 
     steps:
       - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !matrix.platform.wasm
         run: |
           sudo apt update
           sudo apt install libsdl3-dev
 
+      - name: Set up Emscripten
+        if: matrix.platform.wasm
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.69'
+
       - uses: actions/checkout@v4
         with: {submodules: 'recursive'}
-          
-      - run: ${{matrix.platform.prefix}} python3 build.py --dependencies --configure --build ${{matrix.platform.extraflags}}
+
+      - name: Build (native)
+        if: "!matrix.platform.wasm"
+        run: ${{matrix.platform.prefix}} python3 build.py --dependencies --configure --build ${{matrix.platform.extraflags}}
+
+      - name: Build (WebAssembly)
+        if: matrix.platform.wasm
+        run: python3 build.py --configure --build

@@ -156,13 +156,16 @@
     // reloading.
     // ----------------------------------------------------------------
     window.loadLevelOverride = function(arrayBuffer, virtualPath) {
-      virtualPath = virtualPath || '/override_terrain.ter';
+      virtualPath = virtualPath || ':Terrain:override.ter';
       var uint8 = new Uint8Array(arrayBuffer);
+      // Map the Mac-style colon path to a virtual FS path.
+      // ':Terrain:foo.ter' → '/Data/Terrain/foo.ter' inside the WASM virtual FS.
+      var vfsPath = virtualPath.replace(/:/g, '/').replace(/^\//, '/Data/');
       try {
-        FS.unlink(virtualPath);
+        FS.unlink(vfsPath);
       } catch(e) {}
-      FS.writeFile(virtualPath, uint8);
-      console.log('[game] Level override written to', virtualPath,
+      FS.writeFile(vfsPath, uint8);
+      console.log('[game] Level override written to', vfsPath,
                   '– reload with ?levelOverride=' + encodeURIComponent(virtualPath));
     };
   </script>

@@ -31,9 +31,9 @@ extern "C"
 
 	// JavaScript-callable cheat command handler
 	EMSCRIPTEN_KEEPALIVE
-	void WASM_SetFenceCollision(int enabled)
+	void WASM_SetFenceCollision(int enable)
 	{
-		gDisableFenceCollision = (enabled == 0);
+		gDisableFenceCollision = !enable;
 	}
 
 	EMSCRIPTEN_KEEPALIVE

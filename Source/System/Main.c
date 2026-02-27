@@ -1719,14 +1719,12 @@ static Boolean gEmscriptenGameDone = false;
 // Returns defaultVal if the parameter is not present.
 static int GetURLParamInt(const char* name, int defaultVal)
 {
-	char buf[64];
 	int result = EM_ASM_INT({
 		var name = UTF8ToString($0);
 		var params = new URLSearchParams(window.location.search);
 		var val = params.get(name);
 		return val !== null ? parseInt(val, 10) : $1;
 	}, name, defaultVal);
-	(void)buf;
 	return result;
 }
 
@@ -1757,6 +1755,11 @@ static Boolean GetURLParamString(const char* name, char* buf, int bufLen)
 void GameMain_InitEmscripten(void)
 {
 	ToolBoxInit();
+
+	// Browsers require user interaction before going fullscreen;
+	// override the default "fullscreen=true" preference for WASM.
+	gGamePrefs.fullscreen = false;
+	SetFullscreenMode(false);
 
 	InitSpriteManager();
 	InitBG3DManager();
@@ -1867,7 +1870,7 @@ void GameMain_RunFrame(void)
 	{
 		gEmscriptenGameDone = true;
 		gIsInGame = false;
-		FadeOutArea();
+		// Note: FadeOutArea() is not called here as it uses a blocking render loop.
 		CleanupLevel();
 		emscripten_cancel_main_loop();
 		return;
@@ -1880,7 +1883,7 @@ void GameMain_RunFrame(void)
 		{
 			gEmscriptenGameDone = true;
 			gIsInGame = false;
-			FadeOutArea();
+			// Note: FadeOutArea() is not called here as it uses a blocking render loop.
 			CleanupLevel();
 			emscripten_cancel_main_loop();
 			return;

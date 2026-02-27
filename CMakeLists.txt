@@ -60,33 +60,39 @@ add_compile_definitions(POMME_CASE_SENSITIVE_FSSPEC=1)
 # FIND SDL
 #------------------------------------------------------------------------------
 
-# If SDL3_DIR wasn't specified, discover if the user put some prebuilt SDL3
-# package in the 'extern' directory
-if(NOT DEFINED SDL3_DIR)
-	if(APPLE)
-		set(_sdl3_maybe "${CMAKE_SOURCE_DIR}/extern/SDL3.framework/Resources/CMake")
-	elseif(WIN32)
-		set(_sdl3_maybe "${CMAKE_SOURCE_DIR}/extern/SDL3/cmake")
-	endif()
-
-	if(DEFINED _sdl3_maybe AND EXISTS "${_sdl3_maybe}")
-		set(SDL3_DIR "${_sdl3_maybe}")
-		message("Looking for SDL3 in: ${_sdl3_maybe}")
-	else()
-		message("Couldn't find pre-built SDL3 package in: ${_sdl3_maybe}")
-	endif()
-	unset(_sdl3_maybe)
-endif()
-
-if(NOT BUILD_SDL_FROM_SOURCE)
-	find_package(SDL3 CONFIG REQUIRED)
-	message("Found pre-built SDL3")
+if(EMSCRIPTEN)
+	# Emscripten provides SDL3 via USE_SDL=3; no separate find_package needed.
+	# SDL3::SDL3 target is not available; compile/link flags are added below.
+	message("Emscripten build: using USE_SDL=3 (SDL3 via Emscripten ports)")
 else()
+	# If SDL3_DIR wasn't specified, discover if the user put some prebuilt SDL3
+	# package in the 'extern' directory
 	if(NOT DEFINED SDL3_DIR)
-		set(SDL3_DIR "${CMAKE_SOURCE_DIR}/extern/SDL")
+		if(APPLE)
+			set(_sdl3_maybe "${CMAKE_SOURCE_DIR}/extern/SDL3.framework/Resources/CMake")
+		elseif(WIN32)
+			set(_sdl3_maybe "${CMAKE_SOURCE_DIR}/extern/SDL3/cmake")
+		endif()
+
+		if(DEFINED _sdl3_maybe AND EXISTS "${_sdl3_maybe}")
+			set(SDL3_DIR "${_sdl3_maybe}")
+			message("Looking for SDL3 in: ${_sdl3_maybe}")
+		else()
+			message("Couldn't find pre-built SDL3 package in: ${_sdl3_maybe}")
+		endif()
+		unset(_sdl3_maybe)
 	endif()
-	message("Building SDL3 from source: " ${SDL3_DIR})
-	add_subdirectory("${SDL3_DIR}" EXCLUDE_FROM_ALL)
+
+	if(NOT BUILD_SDL_FROM_SOURCE)
+		find_package(SDL3 CONFIG REQUIRED)
+		message("Found pre-built SDL3")
+	else()
+		if(NOT DEFINED SDL3_DIR)
+			set(SDL3_DIR "${CMAKE_SOURCE_DIR}/extern/SDL")
+		endif()
+		message("Building SDL3 from source: " ${SDL3_DIR})
+		add_subdirectory("${SDL3_DIR}" EXCLUDE_FROM_ALL)
+	endif()
 endif()
 
 #------------------------------------------------------------------------------
@@ -202,12 +208,14 @@ if(SANITIZE)
 endif()
 
 # Explicitly link math lib on Linux
-if(NOT APPLE AND NOT WIN32)
+if(NOT APPLE AND NOT WIN32 AND NOT EMSCRIPTEN)
 	target_link_libraries(${GAME_TARGET} PRIVATE m)
 endif()
 
 # Link SDL
-if(NOT SDL_STATIC)
+if(EMSCRIPTEN)
+	# SDL3 provided via USE_SDL=3 in compile/link flags (no CMake target)
+elseif(NOT SDL_STATIC)
 	target_link_libraries(${GAME_TARGET} PRIVATE SDL3::SDL3)
 else()
 	target_link_libraries(${GAME_TARGET} PRIVATE SDL3::SDL3-static)
@@ -331,28 +339,28 @@ if(EMSCRIPTEN)
 	# Emscripten output: produce .html + .js + .wasm
 	set_target_properties(${GAME_TARGET} PROPERTIES SUFFIX ".html")
 
-	target_compile_options(${GAME_TARGET} PRIVATE
-		-sUSE_SDL=3
-	)
+	# SDL3 via Emscripten ports (compile flag)
+	target_compile_options(${GAME_TARGET} PRIVATE -sUSE_SDL=3)
 
 	target_link_options(${GAME_TARGET} PRIVATE
-		# Use SDL3 from Emscripten ports
+		# SDL3 from Emscripten ports
 		-sUSE_SDL=3
-		# WebGL 1.0 (OpenGL ES 2.0 equivalent)
-		-sFULL_ES2=1
-		# Allow large memory heap (game loads all level art)
-		-sINITIAL_MEMORY=256MB
+		# Legacy OpenGL emulation: translates fixed-function pipeline and
+		# immediate-mode (glBegin/glEnd, glMatrixMode, glFog*, etc.) to WebGL.
+		-sLEGACY_GL_EMULATION=1
+		-sGL_UNSAFE_OPTS=0
+		# Memory: start at 256 MB, allow growth
+		-sINITIAL_MEMORY=268435456
 		-sALLOW_MEMORY_GROWTH=1
-		# Preload the entire Data directory into the virtual FS
-		--preload-file "${GAME_DATADIR}@/Data"
-		# Export extra WASM functions callable from JS (cheat interface)
-		-sEXPORTED_FUNCTIONS=_main,_WASM_SetFenceCollision,_WASM_GetFenceCollision
+		# Preload entire Data directory into the virtual filesystem
+		"--preload-file=${GAME_DATADIR}@/Data"
+		# Export cheat-interface functions so JS can call them
+		"-sEXPORTED_FUNCTIONS=_main,_WASM_SetFenceCollision,_WASM_GetFenceCollision"
 		-sEXPORTED_RUNTIME_METHODS=ccall,cwrap
-		# Custom HTML shell
-		--shell-file "${WASM_SHELL_FILE}"
-		# Enable exceptions (game uses C++ exceptions internally)
-		-fexceptions
-		-sNO_DISABLE_EXCEPTION_CATCHING
+		# Custom HTML shell page
+		"--shell-file=${WASM_SHELL_FILE}"
+		# C++ exceptions via emulated implementation (game relies on exceptions)
+		-sDISABLE_EXCEPTION_CATCHING=0
 	)
 endif()
 

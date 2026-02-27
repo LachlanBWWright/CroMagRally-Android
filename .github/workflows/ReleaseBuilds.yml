@@ -38,8 +38,7 @@ jobs:
           emcmake cmake \
             -S . -B build-wasm \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SDL_FROM_SOURCE=OFF \
-            -DCMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+            -DBUILD_SDL_FROM_SOURCE=OFF
 
       - name: Build (Emscripten)
         run: cmake --build build-wasm --parallel
