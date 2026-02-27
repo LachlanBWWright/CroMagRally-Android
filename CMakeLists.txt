@@ -64,6 +64,10 @@ if(EMSCRIPTEN)
 	# Emscripten provides SDL3 via USE_SDL=3; no separate find_package needed.
 	# SDL3::SDL3 target is not available; compile/link flags are added below.
 	message("Emscripten build: using USE_SDL=3 (SDL3 via Emscripten ports)")
+
+	# Create a dummy SDL3::SDL3 target for Pomme to link against
+	# The actual SDL3 functionality comes from -sUSE_SDL=3 compile/link flags
+	add_library(SDL3::SDL3 INTERFACE IMPORTED)
 else()
 	# If SDL3_DIR wasn't specified, discover if the user put some prebuilt SDL3
 	# package in the 'extern' directory
