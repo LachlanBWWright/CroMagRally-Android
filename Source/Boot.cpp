@@ -9,6 +9,11 @@
 #include "PommeInit.h"
 #include "PommeFiles.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#endif
+
 extern "C"
 {
 	#include "game.h"
@@ -17,6 +22,26 @@ extern "C"
 	FSSpec gDataSpec;
 	CommandLineOptions gCommandLine;
 	int gCurrentAntialiasingLevel;
+
+#ifdef __EMSCRIPTEN__
+	// Called once per browser frame when running in WASM mode
+	void GameMain_RunFrame(void);
+	void GameMain_InitEmscripten(void);
+	Boolean GameMain_IsEmscriptenDone(void);
+
+	// JavaScript-callable cheat command handler
+	EMSCRIPTEN_KEEPALIVE
+	void WASM_SetFenceCollision(int enable)
+	{
+		gDisableFenceCollision = !enable;
+	}
+
+	EMSCRIPTEN_KEEPALIVE
+	int WASM_GetFenceCollision(void)
+	{
+		return gDisableFenceCollision ? 0 : 1;
+	}
+#endif
 }
 
 static fs::path FindGameData(const char* executablePath)
@@ -91,6 +116,14 @@ static void ParseCommandLine(int argc, char** argv)
 			gCommandLine.car = atoi(argv[i + 1]);
 			i += 1;
 		}
+		else if (argument == "--level-override")
+		{
+			GAME_ASSERT_MESSAGE(i + 1 < argc, "level override path unspecified");
+			SDL_strlcpy(gCommandLine.levelOverridePath, argv[i + 1], sizeof(gCommandLine.levelOverridePath));
+			i += 1;
+		}
+		else if (argument == "--no-fence-collision")
+			gCommandLine.noFenceCollision = 1;
 		else if (argument == "--stats")
 			gDebugMode = 1;
 		else if (argument == "--no-vsync")
@@ -211,7 +244,15 @@ int main(int argc, char** argv)
 	try
 	{
 		Boot(argc, argv);
+
+#ifdef __EMSCRIPTEN__
+		// On Emscripten, apply fence collision cheat early if specified via URL params.
+		// URL params are read in GameMain_InitEmscripten().
+		GameMain_InitEmscripten();
+		emscripten_set_main_loop(GameMain_RunFrame, 0, 1);
+#else
 		GameMain();
+#endif
 	}
 	catch (Pomme::QuitRequest&)
 	{
@@ -232,7 +273,9 @@ int main(int argc, char** argv)
 	}
 #endif
 
+#ifndef __EMSCRIPTEN__
 	Shutdown();
+#endif
 
 	if (!success)
 	{

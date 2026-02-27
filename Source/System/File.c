@@ -914,7 +914,14 @@ static const char*	levelModelFiles[NUM_TRACKS] =
 			// must do this after creating the view!
 			//
 
-	FSMakeFSSpec(gDataSpec.vRefNum, gDataSpec.parID, terrainFiles[gTrackNum], &spec);
+	if (gCommandLine.levelOverridePath[0] != '\0')
+	{
+		FSMakeFSSpec(gDataSpec.vRefNum, gDataSpec.parID, gCommandLine.levelOverridePath, &spec);
+	}
+	else
+	{
+		FSMakeFSSpec(gDataSpec.vRefNum, gDataSpec.parID, terrainFiles[gTrackNum], &spec);
+	}
 	LoadPlayfield(&spec);
 }
 

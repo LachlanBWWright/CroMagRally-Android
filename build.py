@@ -64,11 +64,25 @@ MACHINE = platform.machine()
 if SYSTEM == "Windows":
     os.system("")  # hack to get ANSI color escapes to work
 
+# Detect Emscripten environment: check both emcmake in PATH and EMSDK env variable.
+EMSCRIPTEN = bool(shutil.which("emcmake") and os.environ.get("EMSDK"))
+if shutil.which("emcmake") and not os.environ.get("EMSDK"):
+    import warnings
+    warnings.warn("emcmake found in PATH but EMSDK environment variable is not set. "
+                  "Run 'source /path/to/emsdk/emsdk_env.sh' to activate Emscripten. "
+                  "Falling back to native build.")
+
 #----------------------------------------------------------------
 
 parser = argparse.ArgumentParser(description=f"Configure, build, and package {game_name_human} {game_ver}")
 
-if SYSTEM == "Darwin":
+if EMSCRIPTEN:
+    default_generator = None
+    default_architecture = None
+    help_configure = "generate Emscripten/WebAssembly project"
+    help_build = "build WebAssembly binary"
+    help_package = "package up the game for the web"
+elif SYSTEM == "Darwin":
     default_generator = "Xcode"
     default_architecture = None
     help_configure = "generate Xcode project"
@@ -438,6 +452,55 @@ class LinuxProject(Project):
             rm_if_exists(self.get_artifact_path())
             call([appimagetool_path, appdir, self.get_artifact_path()])
 
+
+class EmscriptenProject(Project):
+    """WebAssembly build via Emscripten."""
+
+    def __init__(self, dir_name="build-wasm"):
+        super().__init__(dir_name)
+        self.gen_args += [
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DBUILD_SDL_FROM_SOURCE=OFF",
+        ]
+        self.build_args += ["-j", str(NPROC)]
+        self.build_configs = ["Release"]
+
+    def get_artifact_name(self):
+        return f"{game_name}-{game_ver}-wasm.zip"
+
+    def prepare_dependencies(self):
+        # Emscripten provides SDL3 itself; no extra download needed.
+        pass
+
+    def configure(self):
+        fatlog(f"Configuring {self.dir_name} (Emscripten)")
+
+        if os.path.exists(self.dir_name):
+            if not os.path.exists(self.dir_name + "/CMakeCache.txt"):
+                die(f"Path exists and isn't an old build directory: {self.dir_name}")
+            shutil.rmtree(self.dir_name)
+
+        # Use emcmake to wrap cmake so Emscripten toolchain is applied
+        cmd = ["emcmake", "cmake", "-S", ".", "-B", self.dir_name] + self.gen_args
+        call(cmd)
+
+    def package(self):
+        appdir = f"{cache_dir}/{game_name}-{game_ver}-wasm"
+        rmtree_if_exists(appdir)
+        os.makedirs(f"{appdir}/game", exist_ok=True)
+
+        for ext in [".html", ".js", ".wasm", ".data"]:
+            src = f"{self.dir_name}/{game_name}{ext}"
+            if os.path.exists(src):
+                shutil.copy(src, f"{appdir}/game")
+
+        # GitHub Pages landing page
+        if os.path.exists("docs/index.html"):
+            shutil.copy("docs/index.html", appdir)
+
+        rm_if_exists(self.get_artifact_path())
+        zipdir(self.get_artifact_path(), appdir, f"{game_name}-{game_ver}-wasm")
+
 #----------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -447,7 +510,10 @@ if __name__ == "__main__":
     #----------------------------------------------------------------
     # Set up project metadata
 
-    if SYSTEM == "Windows":
+    if EMSCRIPTEN:
+        project = EmscriptenProject(build_dir)
+
+    elif SYSTEM == "Windows":
         project = WindowsProject(build_dir)
 
     elif SYSTEM == "Darwin":

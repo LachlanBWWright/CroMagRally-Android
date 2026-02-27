@@ -105,6 +105,7 @@ long			gNumFences = 0;
 short			gNumFencesDrawn;
 FenceDefType	*gFenceList = nil;
 Boolean			gDrawInvisiFences = true;
+Boolean			gDisableFenceCollision = false;
 
 MOMaterialObject	*gFenceMaterials[NUM_FENCE_TYPES];
 
@@ -637,6 +638,9 @@ float			intersectX,intersectZ;
 OGLVector2D		lineNormal;
 float			radius;
 float			oldX,oldZ,newX,newZ;
+
+	if (gDisableFenceCollision)
+		return;
 
 
 			/* CALC MY MOTION LINE SEGMENT */

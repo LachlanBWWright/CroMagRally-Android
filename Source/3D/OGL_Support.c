@@ -635,10 +635,16 @@ void OGL_DrawScene(void (*drawRoutine)(void))
 		if (++gDebugMode > 3)
 			gDebugMode = 0;
 
+#ifndef __EMSCRIPTEN__
+		// glPolygonMode is not available in WebGL; skip wireframe mode
 		if (gDebugMode == 3)								// see if show wireframe
 			glPolygonMode(GL_FRONT_AND_BACK ,GL_LINE);
 		else
 			glPolygonMode(GL_FRONT_AND_BACK ,GL_FILL);
+#else
+		if (gDebugMode == 3)
+			gDebugMode = 0;		// skip wireframe mode on Emscripten (not supported in WebGL)
+#endif
 	}
 
 

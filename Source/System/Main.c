@@ -14,6 +14,11 @@
 #include "network.h"
 #include <SDL3/SDL.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#endif
+
 
 /****************************/
 /*    PROTOTYPES            */
@@ -1666,6 +1671,9 @@ void GameMain(void)
 			gPlayerInfo[0].vehicleType = gCommandLine.car - 1;
 		}
 
+		if (gCommandLine.noFenceCollision)
+			gDisableFenceCollision = true;
+
 		InitArea();
 		PlayArea();
 		CleanupLevel();
@@ -1696,6 +1704,199 @@ void GameMain(void)
 	}
 }
 
+
+#ifdef __EMSCRIPTEN__
+
+/************************************************************/
+/*  EMSCRIPTEN SUPPORT: PER-FRAME GAME LOOP                 */
+/************************************************************/
+
+// Emscripten game state for the per-frame loop
+static Boolean gEmscriptenGameInitialized = false;
+static Boolean gEmscriptenGameDone = false;
+
+// Helper: read a URL query parameter as an integer.
+// Returns defaultVal if the parameter is not present.
+static int GetURLParamInt(const char* name, int defaultVal)
+{
+	int result = EM_ASM_INT({
+		var name = UTF8ToString($0);
+		var params = new URLSearchParams(window.location.search);
+		var val = params.get(name);
+		return val !== null ? parseInt(val, 10) : $1;
+	}, name, defaultVal);
+	return result;
+}
+
+// Helper: read a URL query parameter as a string.
+// Writes into buf (up to bufLen bytes). Returns true if found.
+static Boolean GetURLParamString(const char* name, char* buf, int bufLen)
+{
+	int found = EM_ASM_INT({
+		var name = UTF8ToString($0);
+		var outPtr = $1;
+		var outLen = $2;
+		var params = new URLSearchParams(window.location.search);
+		var val = params.get(name);
+		if (val === null) return 0;
+		stringToUTF8(val, outPtr, outLen);
+		return 1;
+	}, name, buf, bufLen);
+	return found != 0;
+}
+
+/**************** GAME MAIN: INIT FOR EMSCRIPTEN *****************/
+//
+// Called once at startup in WASM mode.
+// Reads URL params to determine track/car/options, initializes game,
+// then returns. GameMain_RunFrame() is called each browser frame.
+//
+
+void GameMain_InitEmscripten(void)
+{
+	ToolBoxInit();
+
+	// Browsers require user interaction before going fullscreen;
+	// override the default "fullscreen=true" preference for WASM.
+	gGamePrefs.fullscreen = false;
+	SetFullscreenMode(false);
+
+	InitSpriteManager();
+	InitBG3DManager();
+	InitNetworkManager();
+	InitInput();
+	InitWindowStuff();
+	InitTerrainManager();
+	InitSkeletonManager();
+	InitSoundTools();
+	InitTwitchSystem();
+	InitObjectManager();
+
+	{
+		unsigned long someLong;
+		GetDateTime(&someLong);
+		SetMyRandomSeed(someLong);
+	}
+
+			/* READ URL PARAMETERS */
+
+	int track = GetURLParamInt("track", 1);		// 1-based track number
+	int car   = GetURLParamInt("car", 0);		// 1-based car (0 = default)
+
+	// Fence collision disable param
+	int noFence = GetURLParamInt("noFenceCollision", 0);
+	if (noFence || gCommandLine.noFenceCollision)
+		gDisableFenceCollision = true;
+
+	// Level override path (passed as URL param "levelOverride")
+	char overrideBuf[512];
+	overrideBuf[0] = '\0';
+	if (!gCommandLine.levelOverridePath[0])
+	{
+		GetURLParamString("levelOverride", overrideBuf, sizeof(overrideBuf));
+		if (overrideBuf[0])
+			SDL_strlcpy(gCommandLine.levelOverridePath, overrideBuf, sizeof(gCommandLine.levelOverridePath));
+	}
+
+			/* SET UP TRACK */
+
+	gGameMode = GAME_MODE_PRACTICE;
+	gTrackNum = (track - 1);
+	if (gTrackNum < 0 || gTrackNum >= NUM_TRACKS)
+		gTrackNum = 0;
+
+	InitPlayerInfo_Game();
+
+	if (car > 0)
+		gPlayerInfo[0].vehicleType = car - 1;
+	else if (gCommandLine.car > 0)
+		gPlayerInfo[0].vehicleType = gCommandLine.car - 1;
+
+	PreloadGameArt();
+	InitArea();
+
+		/* PREP FIRST FRAME */
+
+	ReadKeyboard();
+	CalcFramesPerSecond();
+	CalcFramesPerSecond();
+	gNoCarControls = true;
+	gDisableHiccupTimer = true;
+	gIsInGame = true;
+
+	MakeFadeEvent(true);
+
+	gEmscriptenGameInitialized = true;
+	gEmscriptenGameDone = false;
+}
+
+/**************** GAME MAIN: RUN ONE FRAME (EMSCRIPTEN) *****************/
+//
+// Called once per browser animation frame via emscripten_set_main_loop().
+//
+
+void GameMain_RunFrame(void)
+{
+	if (!gEmscriptenGameInitialized || gEmscriptenGameDone)
+	{
+		emscripten_cancel_main_loop();
+		return;
+	}
+
+			/* INPUT */
+
+	ReadKeyboard();
+	GetLocalKeyState();
+
+			/* MOVE */
+
+	MoveEverything();
+	UpdateGameModeSpecifics();
+	DoPlayerTerrainUpdate();
+
+			/* DRAW */
+
+	OGL_DrawScene(DrawTerrain);
+
+			/* FRAME ACCOUNTING */
+
+	CalcFramesPerSecond();
+	gGameFrameNum++;
+	gDisableHiccupTimer = false;
+
+			/* CHECK EXIT CONDITIONS */
+
+	if (gGameOver)
+	{
+		gEmscriptenGameDone = true;
+		gIsInGame = false;
+		// Note: FadeOutArea() is not called here as it uses a blocking render loop.
+		CleanupLevel();
+		emscripten_cancel_main_loop();
+		return;
+	}
+
+	if (gTrackCompleted)
+	{
+		gTrackCompletedCoolDownTimer -= gFramesPerSecondFrac;
+		if (gTrackCompletedCoolDownTimer <= 0.0f)
+		{
+			gEmscriptenGameDone = true;
+			gIsInGame = false;
+			// Note: FadeOutArea() is not called here as it uses a blocking render loop.
+			CleanupLevel();
+			emscripten_cancel_main_loop();
+			return;
+		}
+	}
+}
+
+Boolean GameMain_IsEmscriptenDone(void)
+{
+	return gEmscriptenGameDone;
+}
+
+#endif  // __EMSCRIPTEN__
 
 
 
