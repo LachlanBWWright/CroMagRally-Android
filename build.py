@@ -64,8 +64,13 @@ MACHINE = platform.machine()
 if SYSTEM == "Windows":
     os.system("")  # hack to get ANSI color escapes to work
 
-# Detect Emscripten environment
-EMSCRIPTEN = bool(shutil.which("emcmake"))
+# Detect Emscripten environment: check both emcmake in PATH and EMSDK env variable.
+EMSCRIPTEN = bool(shutil.which("emcmake") and os.environ.get("EMSDK"))
+if shutil.which("emcmake") and not os.environ.get("EMSDK"):
+    import warnings
+    warnings.warn("emcmake found in PATH but EMSDK environment variable is not set. "
+                  "Run 'source /path/to/emsdk/emsdk_env.sh' to activate Emscripten. "
+                  "Falling back to native build.")
 
 #----------------------------------------------------------------
 
