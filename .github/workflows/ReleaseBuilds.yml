@@ -33,6 +33,12 @@ jobs:
         with:
           version: '3.1.69'
 
+      - name: Download SDL3 source for Emscripten
+        run: |
+          curl -fL "https://libsdl.org/release/SDL3-3.2.8.tar.gz" -o /tmp/SDL3.tar.gz
+          echo "13388fabb361de768ecdf2b65e52bb27d1054cae6ccb6942ba926e378e00db03  /tmp/SDL3.tar.gz" | sha256sum -c
+          tar xzf /tmp/SDL3.tar.gz -C extern/
+
       - name: Configure (Emscripten)
         run: |
           emcmake cmake \
