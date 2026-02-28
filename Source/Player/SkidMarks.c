@@ -255,7 +255,9 @@ int		i,j,n;
 	OGL_PushState();
 
 	OGL_DisableLighting();									// deactivate lighting
+#ifndef __EMSCRIPTEN__
 	glDisable(GL_NORMALIZE);								// disable vector normalizing since scale == 1
+#endif
 	glDisable(GL_CULL_FACE);								// deactivate culling
 	glDepthMask(GL_FALSE);									// no z-writes
 	glDisable(GL_TEXTURE_2D);

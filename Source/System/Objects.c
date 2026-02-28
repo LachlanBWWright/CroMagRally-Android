@@ -794,9 +794,17 @@ short			skelType, playerNum;
 
 
  		if (noLighting || (theNode->Scale.y == 1.0f))				// if scale == 1 or no lighting, then dont need to normalize vectors
+		{
+#ifndef __EMSCRIPTEN__
  			glDisable(GL_NORMALIZE);
+#endif
+		}
  		else
+		{
+#ifndef __EMSCRIPTEN__
  			glEnable(GL_NORMALIZE);
+#endif
+		}
 
 		switch(theNode->Genre)
 		{
@@ -923,11 +931,10 @@ next:
 	gGlobalColorFilter.g =
 	gGlobalColorFilter.b = 1.0;
 
+#ifndef __EMSCRIPTEN__
 	glEnable(GL_NORMALIZE);
+#endif
 }
-
-
-/************************ DRAW COLLISION BOXES ****************************/
 
 static void DrawCollisionBoxes(ObjNode *theNode, Boolean old)
 {

@@ -155,6 +155,9 @@ static void Boot(int argc, char** argv)
 	SDL_SetAppMetadata(GAME_FULL_NAME, GAME_VERSION, GAME_IDENTIFIER);
 #if _DEBUG
 	SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
+#elif defined(__EMSCRIPTEN__)
+	// Verbose logging helps debug WASM issues in the browser console
+	SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
 #else
 	SDL_SetLogPriorities(SDL_LOG_PRIORITY_INFO);
 #endif
@@ -179,7 +182,12 @@ retryVideo:
 	}
 
 	// Create window
+#ifdef __EMSCRIPTEN__
+	// WebGL requires an OpenGL ES context profile
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#else
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+#endif
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 
@@ -220,6 +228,7 @@ retryVideo:
 	}
 }
 
+#ifndef __EMSCRIPTEN__
 static void Shutdown()
 {
 	// Always restore the user's mouse acceleration before exiting.
@@ -235,6 +244,7 @@ static void Shutdown()
 
 	SDL_Quit();
 }
+#endif
 
 int main(int argc, char** argv)
 {

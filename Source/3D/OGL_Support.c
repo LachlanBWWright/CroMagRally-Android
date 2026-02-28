@@ -15,6 +15,15 @@
 #include "pillarbox.h"
 #include <SDL3/SDL_opengl.h>
 #include <math.h>
+#include <stdlib.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// glColorMaterial is a fixed-function pipeline function not available in WebGL/GLES2.
+// LEGACY_GL_EMULATION does not provide it. This intentionally shadows the GL symbol
+// name to satisfy the linker when the game code calls glColorMaterial.
+void glColorMaterial(GLenum face, GLenum mode) { (void)face; (void)mode; }
+#endif
 
 extern SDL_Window*		gSDLWindow;
 //extern	GWorldPtr		gTerrainDebugGWorld;
@@ -353,7 +362,9 @@ static void OGL_CreateDrawContext(void)
 	if (!gAGLContext)
 		DoFatalAlert(SDL_GetError());
 
+#ifndef __EMSCRIPTEN__
 	GAME_ASSERT(glGetError() == GL_NO_ERROR);
+#endif
 
 
 			/* ACTIVATE CONTEXT */
@@ -361,6 +372,26 @@ static void OGL_CreateDrawContext(void)
 	bool didMakeCurrent = SDL_GL_MakeCurrent(gSDLWindow, gAGLContext);
 	GAME_ASSERT_MESSAGE(didMakeCurrent, SDL_GetError());
 
+#ifdef __EMSCRIPTEN__
+	// SDL3 creates the WebGL context via emscripten_webgl_create_context(),
+	// bypassing Browser.createContext() which normally fires
+	// moduleContextCreatedCallbacks to initialize GLImmediate.
+	// Without this, all LEGACY_GL_EMULATION calls crash on null state.
+	// After SDL_GL_MakeCurrent, the WebGL context is active and
+	// GL.currentContext/GLctx are valid. We just need to tell the Browser
+	// module that WebGL is active, then fire the pending callbacks.
+	EM_ASM({
+		if (typeof Browser !== 'undefined') {
+			Browser.useWebGL = true;
+		}
+		if (typeof Module !== 'undefined') {
+			Module['ctx'] = GLctx;
+		}
+		if (typeof Browser !== 'undefined' && Browser.moduleContextCreatedCallbacks) {
+			Browser.moduleContextCreatedCallbacks.forEach(function(cb) { cb(); });
+		}
+	});
+#endif
 
 #if 0
 			/* GET OPENGL EXTENSIONS */
@@ -398,6 +429,8 @@ static void OGL_InitDrawContext(void)
 
 	glEnable(GL_DEPTH_TEST);								// use z-buffer
 
+#ifndef __EMSCRIPTEN__
+	// Fixed-function material/lighting setup — not available in WebGL/GLES2
 	{
 		GLfloat	color[] = {1,1,1,1};									// set global material color to white
 		glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, color);
@@ -407,6 +440,7 @@ static void OGL_InitDrawContext(void)
 	glEnable(GL_COLOR_MATERIAL);
 
   	glEnable(GL_NORMALIZE);
+#endif
 
 	OGL_DisableLighting();
 
@@ -419,7 +453,9 @@ static void OGL_InitDrawContext(void)
 
 static void OGL_SetStyles(OGLSetupInputType *setupDefPtr)
 {
+#ifndef __EMSCRIPTEN__
 OGLStyleDefType *styleDefPtr = &setupDefPtr->styles;
+#endif
 
 
 	glEnable(GL_CULL_FACE);									// activate culling
@@ -429,6 +465,9 @@ OGLStyleDefType *styleDefPtr = &setupDefPtr->styles;
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);		// set default blend func
 	glDisable(GL_BLEND);									// but turn it off by default
 
+#ifndef __EMSCRIPTEN__
+	// GL_RESCALE_NORMAL, GL_FOG_HINT, GL_ALPHA_TEST, glAlphaFunc, glFog*
+	// are not available in WebGL/GLES2 — skip on Emscripten.
 	glDisable(GL_RESCALE_NORMAL);
 
     glHint(GL_FOG_HINT, GL_NICEST);		// pixel accurate fog?
@@ -458,6 +497,7 @@ OGLStyleDefType *styleDefPtr = &setupDefPtr->styles;
 		glDisable(GL_FOG);
 
 	OGL_CheckError();
+#endif
 }
 
 
@@ -470,6 +510,12 @@ OGLStyleDefType *styleDefPtr = &setupDefPtr->styles;
 
 static void OGL_CreateLights(OGLLightDefType *lightDefPtr)
 {
+#ifdef __EMSCRIPTEN__
+	// Fixed-function lighting is not available in WebGL/GLES2.
+	// LEGACY_GL_EMULATION handles some parts but glLightfv/glLightModelfv
+	// can trigger getCurTexUnit crashes before the first draw call.
+	(void)lightDefPtr;
+#else
 GLfloat	ambient[4];
 
 	OGL_EnableLighting();
@@ -531,6 +577,7 @@ GLfloat	ambient[4];
 		glDisable(GL_LIGHT0+i);
 	}
 
+#endif  /* !__EMSCRIPTEN__ */
 }
 
 /******************* OGL DRAW SCENE *********************/
@@ -575,7 +622,9 @@ void OGL_DrawScene(void (*drawRoutine)(void))
 	gMostRecentMaterial = nil;
 	gGlobalMaterialFlags = 0;
 	glColor4f(1,1,1,1);
+#ifndef __EMSCRIPTEN__
 	glEnable(GL_COLOR_MATERIAL); //---
+#endif
 
 				/*****************/
 				/* CLEAR BUFFERS */
@@ -919,6 +968,70 @@ static void OGL_FixTextureGamma(uint8_t* imageMemory, int width, int height, GLi
 
 /***************** OGL TEXTUREMAP LOAD **************************/
 
+#ifdef __EMSCRIPTEN__
+/**
+ * Convert texture data to a WebGL-compatible format/type combo.
+ * WebGL only supports a small set of format+type combinations.
+ * Returns a malloc'd buffer if conversion was needed (caller must free),
+ * or NULL if no conversion was needed.
+ */
+static void* ConvertTextureForWebGL(const void* src, int w, int h,
+									GLint* ioSrc, GLint* ioDest, GLint* ioType)
+{
+	/* Convert 16-bit BGRA-1555-REV -> 32-bit RGBA-8888 */
+	if (*ioType == GL_UNSIGNED_SHORT_1_5_5_5_REV && *ioSrc == GL_BGRA)
+	{
+		uint8_t* rgba = (uint8_t*) malloc(w * h * 4);
+		const uint16_t* s = (const uint16_t*) src;
+		for (int i = 0; i < w * h; i++)
+		{
+			uint16_t p = s[i];
+			rgba[i*4+0] = (uint8_t)(((p >> 10) & 0x1F) * 255 / 31);
+			rgba[i*4+1] = (uint8_t)(((p >>  5) & 0x1F) * 255 / 31);
+			rgba[i*4+2] = (uint8_t)(((p >>  0) & 0x1F) * 255 / 31);
+			rgba[i*4+3] = (p >> 15) ? 255 : 0;
+		}
+		*ioSrc = GL_RGBA;
+		*ioDest = GL_RGBA;
+		*ioType = GL_UNSIGNED_BYTE;
+		return rgba;
+	}
+
+	/* Convert BGRA UNSIGNED_BYTE -> RGBA UNSIGNED_BYTE (swap R and B) */
+	if (*ioType == GL_UNSIGNED_BYTE && *ioSrc == GL_BGRA)
+	{
+		uint8_t* rgba = (uint8_t*) malloc(w * h * 4);
+		const uint8_t* s = (const uint8_t*) src;
+		for (int i = 0; i < w * h; i++)
+		{
+			rgba[i*4+0] = s[i*4+2];  /* R from B */
+			rgba[i*4+1] = s[i*4+1];  /* G */
+			rgba[i*4+2] = s[i*4+0];  /* B from R */
+			rgba[i*4+3] = s[i*4+3];  /* A */
+		}
+		*ioSrc = GL_RGBA;
+		*ioDest = GL_RGBA;
+		*ioType = GL_UNSIGNED_BYTE;
+		return rgba;
+	}
+
+	/* Force internalFormat == format for UNSIGNED_BYTE (WebGL requirement) */
+	if (*ioType == GL_UNSIGNED_BYTE)
+	{
+		if (*ioDest == GL_RGB5_A1)
+			*ioDest = (*ioSrc == GL_RGBA) ? GL_RGBA : GL_RGB;
+		if (*ioSrc == GL_RGBA && *ioDest == GL_RGB)
+			*ioDest = GL_RGBA;
+		if (*ioSrc == GL_RGB && *ioDest == GL_RGBA)
+			*ioDest = GL_RGB;
+		if (*ioSrc != *ioDest)
+			*ioDest = *ioSrc;
+	}
+
+	return NULL;
+}
+#endif /* __EMSCRIPTEN__ */
+
 GLuint OGL_TextureMap_Load(void *imageMemory, int width, int height,
 							GLint srcFormat,  GLint destFormat, GLint dataType)
 {
@@ -948,6 +1061,14 @@ GLuint	textureName;
 		OGL_FixTextureGamma(imageMemory, width, height, srcFormat, dataType);
 	}
 
+#ifdef __EMSCRIPTEN__
+	/* Convert texture to WebGL-compatible format if needed */
+	void* convertedData = ConvertTextureForWebGL(imageMemory, width, height,
+												&srcFormat, &destFormat, &dataType);
+	if (convertedData)
+		imageMemory = convertedData;
+#endif
+
 	glTexImage2D(GL_TEXTURE_2D,
 				0,										// mipmap level
 				destFormat,								// format in OpenGL
@@ -957,6 +1078,11 @@ GLuint	textureName;
 				srcFormat,								// what my format is
 				dataType,								// size of each r,g,b
 				imageMemory);							// pointer to the actual texture pixels
+
+#ifdef __EMSCRIPTEN__
+	if (convertedData)
+		free(convertedData);
+#endif
 
 
 			/* SEE IF RAN OUT OF MEMORY WHILE COPYING TO OPENGL */
@@ -1118,7 +1244,9 @@ void OGL_UpdateCameraFromToUp(OGLPoint3D *from, OGLPoint3D *to, OGLVector3D *up,
 
 void OGL_Camera_SetPlacementAndUpdateMatrices(int camNum)
 {
+#ifndef __EMSCRIPTEN__
 OGLLightDefType	*lights;
+#endif
 
 
 			/* INIT PROJECTION MATRIX -- STANDARD PERSPECTIVE CAMERA */
@@ -1149,6 +1277,7 @@ OGLLightDefType	*lights;
 
 		/* UPDATE LIGHT POSITIONS */
 
+#ifndef __EMSCRIPTEN__
 	lights =  &gGameView->lightList;						// point to light list
 	for (int i = 0; i < lights->numFillLights; i++)
 	{
@@ -1160,6 +1289,7 @@ OGLLightDefType	*lights;
 		lightVec[3] = 0;									// when w==0, this is a directional light, if 1 then point light
 		glLightfv(GL_LIGHT0+i, GL_POSITION, lightVec);
 	}
+#endif
 
 
 			/* GET VARIOUS CAMERA MATRICES */
@@ -1181,12 +1311,20 @@ OGLLightDefType	*lights;
 
 GLenum _OGL_CheckError(const char* file, const int line)
 {
+#ifdef __EMSCRIPTEN__
+	// LEGACY_GL_EMULATION generates spurious GL_INVALID_ENUM errors.
+	// Drain the error queue and return GL_NO_ERROR to prevent false crashes.
+	GLenum err;
+	while ((err = glGetError()) != GL_NO_ERROR) { /* drain */ }
+	return GL_NO_ERROR;
+#else
 	GLenum error = glGetError();
 	if (error != 0)
 	{
 		DoFatalAlert("OpenGL error 0x%x in %s:%d", error, file, line);
 	}
 	return error;
+#endif
 }
 
 
@@ -1220,16 +1358,32 @@ int	i;
 	gStateStack_Lighting[i] = gMyState_Lighting;
 	gStateStack_CullFace[i] = glIsEnabled(GL_CULL_FACE);
 	gStateStack_DepthTest[i] = glIsEnabled(GL_DEPTH_TEST);
+#ifdef __EMSCRIPTEN__
+	gStateStack_Normalize[i] = false;
+	gStateStack_Fog[i] = false;
+#else
 	gStateStack_Normalize[i] = glIsEnabled(GL_NORMALIZE);
-	gStateStack_Texture2D[i] = glIsEnabled(GL_TEXTURE_2D);
 	gStateStack_Fog[i] 		= glIsEnabled(GL_FOG);
+#endif
+	gStateStack_Texture2D[i] = glIsEnabled(GL_TEXTURE_2D);
 	gStateStack_Blend[i] 	= glIsEnabled(GL_BLEND);
 	gStateStack_ProjectionType[i] = gMyState_ProjectionType;
 
+#ifdef __EMSCRIPTEN__
+	// GL_CURRENT_COLOR is not available in WebGL; track it manually.
+	gStateStack_Color[i][0] = 1.0f;
+	gStateStack_Color[i][1] = 1.0f;
+	gStateStack_Color[i][2] = 1.0f;
+	gStateStack_Color[i][3] = 1.0f;
+	// GL_BLEND_SRC / GL_BLEND_DST use different enum names in WebGL;
+	// use the WebGL-compatible equivalents.
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &gStateStack_BlendSrc[i]);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &gStateStack_BlendDst[i]);
+#else
 	glGetFloatv(GL_CURRENT_COLOR, &gStateStack_Color[i][0]);
-
 	glGetIntegerv(GL_BLEND_SRC, &gStateStack_BlendSrc[i]);
 	glGetIntegerv(GL_BLEND_DST, &gStateStack_BlendDst[i]);
+#endif
 	glGetBooleanv(GL_DEPTH_WRITEMASK, &gStateStack_DepthMask[i]);
 }
 
@@ -1272,9 +1426,17 @@ int		i;
 		glDisable(GL_DEPTH_TEST);
 
 	if (gStateStack_Normalize[i])
+	{
+#ifndef __EMSCRIPTEN__
 		glEnable(GL_NORMALIZE);
+#endif
+	}
 	else
+	{
+#ifndef __EMSCRIPTEN__
 		glDisable(GL_NORMALIZE);
+#endif
+	}
 
 	if (gStateStack_Texture2D[i])
 		glEnable(GL_TEXTURE_2D);
@@ -1287,9 +1449,17 @@ int		i;
 		glDisable(GL_BLEND);
 
 	if (gStateStack_Fog[i])
+	{
+#ifndef __EMSCRIPTEN__
 		glEnable(GL_FOG);
+#endif
+	}
 	else
+	{
+#ifndef __EMSCRIPTEN__
 		glDisable(GL_FOG);
+#endif
+	}
 
 	glDepthMask(gStateStack_DepthMask[i]);
 	glBlendFunc(gStateStack_BlendSrc[i], gStateStack_BlendDst[i]);
@@ -1306,7 +1476,9 @@ int		i;
 void OGL_EnableLighting(void)
 {
 	gMyState_Lighting = true;
+#ifndef __EMSCRIPTEN__
 	glEnable(GL_LIGHTING);
+#endif
 }
 
 /******************* OGL DISABLE LIGHTING ****************************/
@@ -1314,7 +1486,9 @@ void OGL_EnableLighting(void)
 void OGL_DisableLighting(void)
 {
 	gMyState_Lighting = false;
+#ifndef __EMSCRIPTEN__
 	glDisable(GL_LIGHTING);
+#endif
 }
 
 

@@ -788,7 +788,9 @@ uint32_t			pictRowBytes;
 	OGL_PushState();
 
 	OGL_DisableLighting();												// Turn OFF lights since we've prelit terrain
+#ifndef __EMSCRIPTEN__
   	glDisable(GL_NORMALIZE);											// turn off vector normalization since scale == 1
+#endif
     glDisable(GL_BLEND);												// no blending for terrain - its always opaque
 
 	gNumSuperTilesDrawn	= 0;

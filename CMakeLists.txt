@@ -56,18 +56,51 @@ set(POMME_NO_QD3D		true)
 set(POMME_NO_VIDEO		true)
 add_compile_definitions(POMME_CASE_SENSITIVE_FSSPEC=1)
 
+# Enable C++ exception support for Emscripten using the JS-based mechanism
+# (-fexceptions) rather than native WASM exceptions (-fwasm-exceptions).
+# The -fexceptions flag must be set globally (before add_subdirectory calls)
+# so that all translation units — including Pomme — use the same ABI.
+if(EMSCRIPTEN)
+	add_compile_options(-fexceptions)
+	add_link_options(-fexceptions)
+endif()
+
 #------------------------------------------------------------------------------
 # FIND SDL
 #------------------------------------------------------------------------------
 
 if(EMSCRIPTEN)
-	# Emscripten provides SDL3 via USE_SDL=3; no separate find_package needed.
-	# SDL3::SDL3 target is not available; compile/link flags are added below.
-	message("Emscripten build: using USE_SDL=3 (SDL3 via Emscripten ports)")
+	# Emscripten does not bundle an SDL3 port. We build SDL3 from source.
+	# The SDL3 source must be present at extern/SDL3-<version>/ or the path
+	# specified by SDL3_DIR on the command line.
+	message("Emscripten build: building SDL3 from source (static)")
 
-	# Create a dummy SDL3::SDL3 target for Pomme to link against
-	# The actual SDL3 functionality comes from -sUSE_SDL=3 compile/link flags
-	add_library(SDL3::SDL3 INTERFACE IMPORTED)
+	if(NOT DEFINED SDL3_DIR OR NOT IS_DIRECTORY "${SDL3_DIR}")
+		# Auto-detect SDL3 source in extern/
+		file(GLOB _sdl3_src_dirs "${CMAKE_SOURCE_DIR}/extern/SDL3-*")
+		list(LENGTH _sdl3_src_dirs _sdl3_count)
+		if(_sdl3_count GREATER 0)
+			list(GET _sdl3_src_dirs 0 _sdl3_src)
+		else()
+			message(FATAL_ERROR
+				"SDL3 source not found in extern/. "
+				"Download SDL3 source (e.g. SDL3-3.2.4) into extern/ or pass -DSDL3_DIR=<path>.")
+		endif()
+		unset(_sdl3_src_dirs)
+		unset(_sdl3_count)
+	else()
+		set(_sdl3_src "${SDL3_DIR}")
+	endif()
+	message("SDL3 source: ${_sdl3_src}")
+
+	set(SDL_STATIC ON CACHE BOOL "" FORCE)
+	set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+	add_subdirectory("${_sdl3_src}" "${CMAKE_BINARY_DIR}/SDL3" EXCLUDE_FROM_ALL)
+	unset(_sdl3_src)
+
+	# SDL3's add_subdirectory creates targets in its binary dir.
+	# Point SDL3_DIR there so Pomme's find_package(SDL3) succeeds.
+	set(SDL3_DIR "${CMAKE_BINARY_DIR}/SDL3" CACHE PATH "" FORCE)
 else()
 	# If SDL3_DIR wasn't specified, discover if the user put some prebuilt SDL3
 	# package in the 'extern' directory
@@ -343,16 +376,15 @@ if(EMSCRIPTEN)
 	# Emscripten output: produce .html + .js + .wasm
 	set_target_properties(${GAME_TARGET} PROPERTIES SUFFIX ".html")
 
-	# SDL3 via Emscripten ports (compile flag)
-	target_compile_options(${GAME_TARGET} PRIVATE -sUSE_SDL=3)
-
 	target_link_options(${GAME_TARGET} PRIVATE
-		# SDL3 from Emscripten ports
-		-sUSE_SDL=3
 		# Legacy OpenGL emulation: translates fixed-function pipeline and
 		# immediate-mode (glBegin/glEnd, glMatrixMode, glFog*, etc.) to WebGL.
 		-sLEGACY_GL_EMULATION=1
 		-sGL_UNSAFE_OPTS=0
+		# Asyncify: allows blocking C loops (game main loop, SDL_Delay, etc.)
+		# to yield to the browser event loop so frames can be composited.
+		-sASYNCIFY=1
+		-sASYNCIFY_STACK_SIZE=65536
 		# Memory: start at 256 MB, allow growth
 		-sINITIAL_MEMORY=268435456
 		-sALLOW_MEMORY_GROWTH=1
