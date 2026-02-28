@@ -216,6 +216,22 @@
 
       onAbort: function(what) { console.error('[CroMag] ABORT:', what); },
 
+      onExit: function(status) {
+        console.log('[CroMag] Game exited with status ' + status);
+        // Show a "Race finished" overlay after the main loop ends
+        var card = document.getElementById('loading-card');
+        if (card) {
+          document.getElementById('screenshot').style.display = 'none';
+          document.getElementById('progress-bar').style.display = 'none';
+          document.getElementById('progress-label').textContent = '';
+          document.getElementById('status-text').textContent = 'Race finished!';
+          document.getElementById('launch-btn').textContent = '↺ Reload';
+          document.getElementById('launch-btn').style.display = '';
+          document.getElementById('launch-btn').onclick = function() { location.reload(); };
+          card.style.display = '';
+        }
+      },
+
       onRuntimeInitialized: function() {
         console.log('[CroMag] Runtime ready');
         // Hide loading card, show toolbar
