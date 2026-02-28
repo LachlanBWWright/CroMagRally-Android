@@ -18,6 +18,7 @@
 #include <stdlib.h>
 
 #ifdef __EMSCRIPTEN__
+#include <emscripten.h>
 // glColorMaterial is a fixed-function pipeline function not available in WebGL/GLES2.
 // LEGACY_GL_EMULATION does not provide it. This intentionally shadows the GL symbol
 // name to satisfy the linker when the game code calls glColorMaterial.
@@ -371,6 +372,26 @@ static void OGL_CreateDrawContext(void)
 	bool didMakeCurrent = SDL_GL_MakeCurrent(gSDLWindow, gAGLContext);
 	GAME_ASSERT_MESSAGE(didMakeCurrent, SDL_GetError());
 
+#ifdef __EMSCRIPTEN__
+	// SDL3 creates the WebGL context via emscripten_webgl_create_context(),
+	// bypassing Browser.createContext() which normally fires
+	// moduleContextCreatedCallbacks to initialize GLImmediate.
+	// Without this, all LEGACY_GL_EMULATION calls crash on null state.
+	// After SDL_GL_MakeCurrent, the WebGL context is active and
+	// GL.currentContext/GLctx are valid. We just need to tell the Browser
+	// module that WebGL is active, then fire the pending callbacks.
+	EM_ASM({
+		if (typeof Browser !== 'undefined') {
+			Browser.useWebGL = true;
+		}
+		if (typeof Module !== 'undefined') {
+			Module['ctx'] = GLctx;
+		}
+		if (typeof Browser !== 'undefined' && Browser.moduleContextCreatedCallbacks) {
+			Browser.moduleContextCreatedCallbacks.forEach(function(cb) { cb(); });
+		}
+	});
+#endif
 
 #if 0
 			/* GET OPENGL EXTENSIONS */
