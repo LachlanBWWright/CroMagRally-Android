@@ -408,6 +408,8 @@ static void OGL_InitDrawContext(void)
 
 	glEnable(GL_DEPTH_TEST);								// use z-buffer
 
+#ifndef __EMSCRIPTEN__
+	// Fixed-function material/lighting setup — not available in WebGL/GLES2
 	{
 		GLfloat	color[] = {1,1,1,1};									// set global material color to white
 		glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, color);
@@ -417,6 +419,7 @@ static void OGL_InitDrawContext(void)
 	glEnable(GL_COLOR_MATERIAL);
 
   	glEnable(GL_NORMALIZE);
+#endif
 
 	OGL_DisableLighting();
 
@@ -429,7 +432,9 @@ static void OGL_InitDrawContext(void)
 
 static void OGL_SetStyles(OGLSetupInputType *setupDefPtr)
 {
+#ifndef __EMSCRIPTEN__
 OGLStyleDefType *styleDefPtr = &setupDefPtr->styles;
+#endif
 
 
 	glEnable(GL_CULL_FACE);									// activate culling
@@ -439,6 +444,9 @@ OGLStyleDefType *styleDefPtr = &setupDefPtr->styles;
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);		// set default blend func
 	glDisable(GL_BLEND);									// but turn it off by default
 
+#ifndef __EMSCRIPTEN__
+	// GL_RESCALE_NORMAL, GL_FOG_HINT, GL_ALPHA_TEST, glAlphaFunc, glFog*
+	// are not available in WebGL/GLES2 — skip on Emscripten.
 	glDisable(GL_RESCALE_NORMAL);
 
     glHint(GL_FOG_HINT, GL_NICEST);		// pixel accurate fog?
@@ -468,6 +476,7 @@ OGLStyleDefType *styleDefPtr = &setupDefPtr->styles;
 		glDisable(GL_FOG);
 
 	OGL_CheckError();
+#endif
 }
 
 
@@ -480,6 +489,12 @@ OGLStyleDefType *styleDefPtr = &setupDefPtr->styles;
 
 static void OGL_CreateLights(OGLLightDefType *lightDefPtr)
 {
+#ifdef __EMSCRIPTEN__
+	// Fixed-function lighting is not available in WebGL/GLES2.
+	// LEGACY_GL_EMULATION handles some parts but glLightfv/glLightModelfv
+	// can trigger getCurTexUnit crashes before the first draw call.
+	(void)lightDefPtr;
+#else
 GLfloat	ambient[4];
 
 	OGL_EnableLighting();
@@ -541,6 +556,7 @@ GLfloat	ambient[4];
 		glDisable(GL_LIGHT0+i);
 	}
 
+#endif  /* !__EMSCRIPTEN__ */
 }
 
 /******************* OGL DRAW SCENE *********************/
@@ -585,7 +601,9 @@ void OGL_DrawScene(void (*drawRoutine)(void))
 	gMostRecentMaterial = nil;
 	gGlobalMaterialFlags = 0;
 	glColor4f(1,1,1,1);
+#ifndef __EMSCRIPTEN__
 	glEnable(GL_COLOR_MATERIAL); //---
+#endif
 
 				/*****************/
 				/* CLEAR BUFFERS */
@@ -1205,7 +1223,9 @@ void OGL_UpdateCameraFromToUp(OGLPoint3D *from, OGLPoint3D *to, OGLVector3D *up,
 
 void OGL_Camera_SetPlacementAndUpdateMatrices(int camNum)
 {
+#ifndef __EMSCRIPTEN__
 OGLLightDefType	*lights;
+#endif
 
 
 			/* INIT PROJECTION MATRIX -- STANDARD PERSPECTIVE CAMERA */
@@ -1236,6 +1256,7 @@ OGLLightDefType	*lights;
 
 		/* UPDATE LIGHT POSITIONS */
 
+#ifndef __EMSCRIPTEN__
 	lights =  &gGameView->lightList;						// point to light list
 	for (int i = 0; i < lights->numFillLights; i++)
 	{
@@ -1247,6 +1268,7 @@ OGLLightDefType	*lights;
 		lightVec[3] = 0;									// when w==0, this is a directional light, if 1 then point light
 		glLightfv(GL_LIGHT0+i, GL_POSITION, lightVec);
 	}
+#endif
 
 
 			/* GET VARIOUS CAMERA MATRICES */
@@ -1315,9 +1337,14 @@ int	i;
 	gStateStack_Lighting[i] = gMyState_Lighting;
 	gStateStack_CullFace[i] = glIsEnabled(GL_CULL_FACE);
 	gStateStack_DepthTest[i] = glIsEnabled(GL_DEPTH_TEST);
+#ifdef __EMSCRIPTEN__
+	gStateStack_Normalize[i] = false;
+	gStateStack_Fog[i] = false;
+#else
 	gStateStack_Normalize[i] = glIsEnabled(GL_NORMALIZE);
-	gStateStack_Texture2D[i] = glIsEnabled(GL_TEXTURE_2D);
 	gStateStack_Fog[i] 		= glIsEnabled(GL_FOG);
+#endif
+	gStateStack_Texture2D[i] = glIsEnabled(GL_TEXTURE_2D);
 	gStateStack_Blend[i] 	= glIsEnabled(GL_BLEND);
 	gStateStack_ProjectionType[i] = gMyState_ProjectionType;
 
@@ -1367,9 +1394,17 @@ int		i;
 		glDisable(GL_DEPTH_TEST);
 
 	if (gStateStack_Normalize[i])
+	{
+#ifndef __EMSCRIPTEN__
 		glEnable(GL_NORMALIZE);
+#endif
+	}
 	else
+	{
+#ifndef __EMSCRIPTEN__
 		glDisable(GL_NORMALIZE);
+#endif
+	}
 
 	if (gStateStack_Texture2D[i])
 		glEnable(GL_TEXTURE_2D);
@@ -1382,9 +1417,17 @@ int		i;
 		glDisable(GL_BLEND);
 
 	if (gStateStack_Fog[i])
+	{
+#ifndef __EMSCRIPTEN__
 		glEnable(GL_FOG);
+#endif
+	}
 	else
+	{
+#ifndef __EMSCRIPTEN__
 		glDisable(GL_FOG);
+#endif
+	}
 
 	glDepthMask(gStateStack_DepthMask[i]);
 	glBlendFunc(gStateStack_BlendSrc[i], gStateStack_BlendDst[i]);
