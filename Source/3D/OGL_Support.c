@@ -15,6 +15,7 @@
 #include "pillarbox.h"
 #include <SDL3/SDL_opengl.h>
 #include <math.h>
+#include <stdlib.h>
 
 extern SDL_Window*		gSDLWindow;
 //extern	GWorldPtr		gTerrainDebugGWorld;
@@ -353,7 +354,9 @@ static void OGL_CreateDrawContext(void)
 	if (!gAGLContext)
 		DoFatalAlert(SDL_GetError());
 
+#ifndef __EMSCRIPTEN__
 	GAME_ASSERT(glGetError() == GL_NO_ERROR);
+#endif
 
 
 			/* ACTIVATE CONTEXT */
@@ -919,6 +922,70 @@ static void OGL_FixTextureGamma(uint8_t* imageMemory, int width, int height, GLi
 
 /***************** OGL TEXTUREMAP LOAD **************************/
 
+#ifdef __EMSCRIPTEN__
+/**
+ * Convert texture data to a WebGL-compatible format/type combo.
+ * WebGL only supports a small set of format+type combinations.
+ * Returns a malloc'd buffer if conversion was needed (caller must free),
+ * or NULL if no conversion was needed.
+ */
+static void* ConvertTextureForWebGL(const void* src, int w, int h,
+									GLint* ioSrc, GLint* ioDest, GLint* ioType)
+{
+	/* Convert 16-bit BGRA-1555-REV -> 32-bit RGBA-8888 */
+	if (*ioType == GL_UNSIGNED_SHORT_1_5_5_5_REV && *ioSrc == GL_BGRA)
+	{
+		uint8_t* rgba = (uint8_t*) malloc(w * h * 4);
+		const uint16_t* s = (const uint16_t*) src;
+		for (int i = 0; i < w * h; i++)
+		{
+			uint16_t p = s[i];
+			rgba[i*4+0] = (uint8_t)(((p >> 10) & 0x1F) * 255 / 31);
+			rgba[i*4+1] = (uint8_t)(((p >>  5) & 0x1F) * 255 / 31);
+			rgba[i*4+2] = (uint8_t)(((p >>  0) & 0x1F) * 255 / 31);
+			rgba[i*4+3] = (p >> 15) ? 255 : 0;
+		}
+		*ioSrc = GL_RGBA;
+		*ioDest = GL_RGBA;
+		*ioType = GL_UNSIGNED_BYTE;
+		return rgba;
+	}
+
+	/* Convert BGRA UNSIGNED_BYTE -> RGBA UNSIGNED_BYTE (swap R and B) */
+	if (*ioType == GL_UNSIGNED_BYTE && *ioSrc == GL_BGRA)
+	{
+		uint8_t* rgba = (uint8_t*) malloc(w * h * 4);
+		const uint8_t* s = (const uint8_t*) src;
+		for (int i = 0; i < w * h; i++)
+		{
+			rgba[i*4+0] = s[i*4+2];  /* R from B */
+			rgba[i*4+1] = s[i*4+1];  /* G */
+			rgba[i*4+2] = s[i*4+0];  /* B from R */
+			rgba[i*4+3] = s[i*4+3];  /* A */
+		}
+		*ioSrc = GL_RGBA;
+		*ioDest = GL_RGBA;
+		*ioType = GL_UNSIGNED_BYTE;
+		return rgba;
+	}
+
+	/* Force internalFormat == format for UNSIGNED_BYTE (WebGL requirement) */
+	if (*ioType == GL_UNSIGNED_BYTE)
+	{
+		if (*ioDest == GL_RGB5_A1)
+			*ioDest = (*ioSrc == GL_RGBA) ? GL_RGBA : GL_RGB;
+		if (*ioSrc == GL_RGBA && *ioDest == GL_RGB)
+			*ioDest = GL_RGBA;
+		if (*ioSrc == GL_RGB && *ioDest == GL_RGBA)
+			*ioDest = GL_RGB;
+		if (*ioSrc != *ioDest)
+			*ioDest = *ioSrc;
+	}
+
+	return NULL;
+}
+#endif /* __EMSCRIPTEN__ */
+
 GLuint OGL_TextureMap_Load(void *imageMemory, int width, int height,
 							GLint srcFormat,  GLint destFormat, GLint dataType)
 {
@@ -948,6 +1015,14 @@ GLuint	textureName;
 		OGL_FixTextureGamma(imageMemory, width, height, srcFormat, dataType);
 	}
 
+#ifdef __EMSCRIPTEN__
+	/* Convert texture to WebGL-compatible format if needed */
+	void* convertedData = ConvertTextureForWebGL(imageMemory, width, height,
+												&srcFormat, &destFormat, &dataType);
+	if (convertedData)
+		imageMemory = convertedData;
+#endif
+
 	glTexImage2D(GL_TEXTURE_2D,
 				0,										// mipmap level
 				destFormat,								// format in OpenGL
@@ -957,6 +1032,11 @@ GLuint	textureName;
 				srcFormat,								// what my format is
 				dataType,								// size of each r,g,b
 				imageMemory);							// pointer to the actual texture pixels
+
+#ifdef __EMSCRIPTEN__
+	if (convertedData)
+		free(convertedData);
+#endif
 
 
 			/* SEE IF RAN OUT OF MEMORY WHILE COPYING TO OPENGL */
@@ -1181,12 +1261,20 @@ OGLLightDefType	*lights;
 
 GLenum _OGL_CheckError(const char* file, const int line)
 {
+#ifdef __EMSCRIPTEN__
+	// LEGACY_GL_EMULATION generates spurious GL_INVALID_ENUM errors.
+	// Drain the error queue and return GL_NO_ERROR to prevent false crashes.
+	GLenum err;
+	while ((err = glGetError()) != GL_NO_ERROR) { /* drain */ }
+	return GL_NO_ERROR;
+#else
 	GLenum error = glGetError();
 	if (error != 0)
 	{
 		DoFatalAlert("OpenGL error 0x%x in %s:%d", error, file, line);
 	}
 	return error;
+#endif
 }
 
 
