@@ -494,9 +494,20 @@ class EmscriptenProject(Project):
             if os.path.exists(src):
                 shutil.copy(src, f"{appdir}/game")
 
-        # GitHub Pages landing page
-        if os.path.exists("docs/index.html"):
-            shutil.copy("docs/index.html", appdir)
+        # GitHub Pages assets: copy everything from docs/
+        if os.path.isdir("docs"):
+            for item in os.listdir("docs"):
+                src = os.path.join("docs", item)
+                dst = os.path.join(appdir, item)
+                if os.path.isdir(src):
+                    shutil.copytree(src, dst)
+                else:
+                    shutil.copy(src, dst)
+
+        # Ensure .nojekyll exists
+        nojekyll = os.path.join(appdir, ".nojekyll")
+        if not os.path.exists(nojekyll):
+            open(nojekyll, "w").close()
 
         rm_if_exists(self.get_artifact_path())
         zipdir(self.get_artifact_path(), appdir, f"{game_name}-{game_ver}-wasm")
