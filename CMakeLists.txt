@@ -56,6 +56,15 @@ set(POMME_NO_QD3D		true)
 set(POMME_NO_VIDEO		true)
 add_compile_definitions(POMME_CASE_SENSITIVE_FSSPEC=1)
 
+# Enable C++ exception support for Emscripten using the JS-based mechanism
+# (-fexceptions) rather than native WASM exceptions (-fwasm-exceptions).
+# The -fexceptions flag must be set globally (before add_subdirectory calls)
+# so that all translation units — including Pomme — use the same ABI.
+if(EMSCRIPTEN)
+	add_compile_options(-fexceptions)
+	add_link_options(-fexceptions)
+endif()
+
 #------------------------------------------------------------------------------
 # FIND SDL
 #------------------------------------------------------------------------------
