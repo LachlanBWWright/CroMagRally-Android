@@ -17,6 +17,12 @@
 #include <math.h>
 #include <stdlib.h>
 
+#ifdef __EMSCRIPTEN__
+// glColorMaterial is a fixed-function pipeline function not available in WebGL/GLES2.
+// LEGACY_GL_EMULATION does not provide it. Stub it as a no-op.
+void glColorMaterial(GLenum face, GLenum mode) { (void)face; (void)mode; }
+#endif
+
 extern SDL_Window*		gSDLWindow;
 //extern	GWorldPtr		gTerrainDebugGWorld;
 

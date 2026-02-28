@@ -65,9 +65,28 @@ if(EMSCRIPTEN)
 	# SDL3::SDL3 target is not available; compile/link flags are added below.
 	message("Emscripten build: using USE_SDL=3 (SDL3 via Emscripten ports)")
 
-	# Create a dummy SDL3::SDL3 target for Pomme to link against
-	# The actual SDL3 functionality comes from -sUSE_SDL=3 compile/link flags
+	# Create a dummy SDL3::SDL3 target for Pomme to link against.
+	# Set USE_SDL=3 as an interface compile/link option so any target
+	# linking SDL3::SDL3 (e.g. Pomme) gets the SDL3 headers and libraries.
 	add_library(SDL3::SDL3 INTERFACE IMPORTED)
+	set_target_properties(SDL3::SDL3 PROPERTIES
+		INTERFACE_COMPILE_OPTIONS "-sUSE_SDL=3"
+		INTERFACE_LINK_OPTIONS "-sUSE_SDL=3"
+	)
+
+	# Write a minimal SDL3Config.cmake so Pomme's find_package(SDL3) succeeds
+	file(WRITE "${CMAKE_BINARY_DIR}/SDL3Config.cmake"
+		"# Minimal SDL3 config for Emscripten (SDL3 provided via -sUSE_SDL=3)\n"
+		"if(NOT TARGET SDL3::SDL3)\n"
+		"  add_library(SDL3::SDL3 INTERFACE IMPORTED)\n"
+		"  set_target_properties(SDL3::SDL3 PROPERTIES\n"
+		"    INTERFACE_COMPILE_OPTIONS \"-sUSE_SDL=3\"\n"
+		"    INTERFACE_LINK_OPTIONS \"-sUSE_SDL=3\"\n"
+		"  )\n"
+		"endif()\n"
+		"set(SDL3_FOUND TRUE)\n"
+	)
+	set(SDL3_DIR "${CMAKE_BINARY_DIR}" CACHE PATH "" FORCE)
 else()
 	# If SDL3_DIR wasn't specified, discover if the user put some prebuilt SDL3
 	# package in the 'extern' directory
