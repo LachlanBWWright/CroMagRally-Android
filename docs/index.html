@@ -5,29 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cro-Mag Rally – Play in Browser</title>
   <style>
+    :root {
+      --accent: #f90;
+      --bg:     #0a0a0a;
+      --panel:  #1a1a1a;
+      --border: #333;
+      --text:   #eee;
+      --dim:    #888;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background: #111; color: #eee;
-      font-family: system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
       display: flex; flex-direction: column;
       align-items: center; min-height: 100vh;
     }
     header {
-      background: #1a1a1a; width: 100%; padding: 16px 24px;
-      border-bottom: 2px solid #f90;
+      background: var(--panel); width: 100%; padding: 16px 24px;
+      border-bottom: 2px solid var(--accent);
       display: flex; align-items: center; gap: 16px;
     }
-    header h1 { font-size: 1.6rem; color: #f90; }
-    header p  { color: #aaa; font-size: 0.9rem; }
+    header h1 { font-size: 1.6rem; color: var(--accent); }
+    header p  { color: var(--dim); font-size: 0.9rem; }
 
     main {
-      max-width: 800px; width: 100%; padding: 32px 24px;
+      max-width: 860px; width: 100%; padding: 32px 24px;
       display: flex; flex-direction: column; gap: 32px;
+    }
+
+    .hero-img {
+      width: 100%; border-radius: 10px;
+      border: 1px solid var(--border);
     }
 
     .game-frame-wrapper {
       width: 100%; background: #000;
-      border: 2px solid #333; border-radius: 8px; overflow: hidden;
+      border: 2px solid var(--border); border-radius: 8px; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
     }
     .game-frame-wrapper iframe {
@@ -35,18 +48,18 @@
     }
 
     .section { display: flex; flex-direction: column; gap: 12px; }
-    .section h2 { color: #f90; font-size: 1.2rem; }
+    .section h2 { color: var(--accent); font-size: 1.2rem; }
 
     .params-form { display: flex; flex-wrap: wrap; gap: 12px; }
     .param-group { display: flex; flex-direction: column; gap: 4px; }
-    .param-group label { font-size: 0.8rem; color: #aaa; }
+    .param-group label { font-size: 0.8rem; color: var(--dim); }
     .param-group input, .param-group select {
       background: #222; border: 1px solid #444; border-radius: 4px;
-      color: #eee; padding: 6px 10px; font-size: 0.9rem;
+      color: var(--text); padding: 6px 10px; font-size: 0.9rem;
     }
     .launch-link {
       display: inline-block; margin-top: 8px;
-      padding: 8px 20px; background: #f90; color: #111;
+      padding: 8px 20px; background: var(--accent); color: #111;
       border-radius: 6px; text-decoration: none; font-weight: bold;
     }
     .launch-link:hover { background: #ffb733; }
@@ -56,33 +69,42 @@
       gap: 8px;
     }
     .track-btn {
-      padding: 8px 12px; background: #1e1e1e; border: 1px solid #333;
-      border-radius: 6px; cursor: pointer; color: #eee; font-size: 0.85rem;
+      padding: 8px 12px; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 6px; cursor: pointer; color: var(--text); font-size: 0.85rem;
       text-align: left;
     }
-    .track-btn:hover { background: #2a2a2a; border-color: #f90; }
-    .track-btn span { display: block; color: #888; font-size: 0.75rem; }
+    .track-btn:hover { background: #2a2a2a; border-color: var(--accent); }
+    .track-btn span { display: block; color: var(--dim); font-size: 0.75rem; }
 
     code { background: #222; padding: 2px 6px; border-radius: 3px; font-size: 0.85rem; }
-    pre  { background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
+    pre  { background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
            padding: 12px 16px; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
-    a    { color: #f90; }
+    a    { color: var(--accent); }
+
+    footer {
+      width: 100%; padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      text-align: center; color: var(--dim); font-size: 0.8rem;
+    }
   </style>
 </head>
 <body>
   <header>
     <div>
       <h1>🏎️ Cro-Mag Rally</h1>
-      <p>WebAssembly build · Level-editor preview</p>
+      <p>WebAssembly build · Play in your browser</p>
     </div>
   </header>
 
   <main>
 
-    <!-- ── Quick launch ─────────────────────────────────────────── -->
+    <!-- ── Screenshot ─────────────────────────────────────── -->
+    <img class="hero-img" src="screenshot.webp" alt="Cro-Mag Rally screenshot">
+
+    <!-- ── Quick launch ─────────────────────────────────────── -->
     <section class="section">
       <h2>Quick Launch</h2>
-      <p>Open the game in a new tab.  Choose a track and car below, then click <strong>Launch</strong>.</p>
+      <p>Choose a track and car below, then click <strong>Launch</strong> to open the game in a new tab.</p>
 
       <div class="params-form" id="params-form">
         <div class="param-group">
@@ -119,19 +141,19 @@
       <a id="launch-link" class="launch-link" href="game/CroMagRally.html" target="_blank">▶ Launch</a>
     </section>
 
-    <!-- ── Embed ─────────────────────────────────────────────────── -->
+    <!-- ── Embed ─────────────────────────────────────────────── -->
     <section class="section">
       <h2>Preview</h2>
-      <p>The game can also run inline.  Click <strong>Launch</strong> above first to check it works, then reload the iframe here.</p>
+      <p>The game can also run inline. Click <strong>Load game in iframe</strong> below.</p>
       <div class="game-frame-wrapper">
         <iframe id="game-iframe" src="about:blank" allowfullscreen></iframe>
       </div>
-      <button onclick="loadIframe()" style="align-self:start; padding:6px 16px; background:#333; border:1px solid #555; border-radius:4px; color:#eee; cursor:pointer;">
+      <button onclick="loadIframe()" style="align-self:start; padding:6px 16px; background:var(--panel); border:1px solid var(--border); border-radius:4px; color:var(--text); cursor:pointer;">
         Load game in iframe
       </button>
     </section>
 
-    <!-- ── Level editor API ──────────────────────────────────────── -->
+    <!-- ── Level editor API ──────────────────────────────────── -->
     <section class="section">
       <h2>Level Editor Integration</h2>
 
@@ -163,6 +185,10 @@ fetch('/path/to/MyLevel.ter')
     </section>
 
   </main>
+
+  <footer>
+    <p>© 2000 Pangea Software, Inc. · Ported to WebAssembly with Emscripten</p>
+  </footer>
 
   <script>
     var GAME_PATH = 'game/CroMagRally.html';

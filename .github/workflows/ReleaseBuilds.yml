@@ -46,11 +46,23 @@ jobs:
       - name: Collect WASM artefacts
         run: |
           mkdir -p dist-wasm/game
+
+          # Copy all static assets from docs/ (landing page, screenshots, manual, etc.)
+          for f in docs/*; do
+            cp -r "$f" dist-wasm/ 2>/dev/null || true
+          done
+
+          # Ensure .nojekyll is present to prevent GitHub Pages processing
+          touch dist-wasm/.nojekyll
+
+          # WASM build output goes into game/ subdirectory
           cp build-wasm/CroMagRally.html dist-wasm/game/
           cp build-wasm/CroMagRally.js   dist-wasm/game/
           cp build-wasm/CroMagRally.wasm dist-wasm/game/
           cp build-wasm/CroMagRally.data dist-wasm/game/ 2>/dev/null || true
-          cp docs/index.html dist-wasm/
+
+          echo "Site contents:"
+          ls -lhR dist-wasm/ | head -40
 
       - name: Upload WASM artefact
         uses: actions/upload-artifact@v4

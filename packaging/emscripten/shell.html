@@ -1,173 +1,373 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cro-Mag Rally</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cro-Mag Rally — WebAssembly</title>
   <style>
+    :root {
+      --accent: #f90;
+      --bg:     #0a0a0a;
+      --panel:  #1a1a1a;
+      --border: #333;
+      --text:   #eee;
+      --dim:    #888;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; background: #111; color: #eee; font-family: sans-serif; }
 
-    #launch-overlay {
-      position: fixed; inset: 0;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      background: #111; z-index: 100;
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      line-height: 1.5;
     }
-    #launch-overlay h1 { font-size: 2rem; margin-bottom: 1rem; color: #f90; }
-    #launch-overlay p  { color: #aaa; margin-bottom: 1.5rem; text-align: center; max-width: 420px; }
-    #launch-btn {
-      padding: 0.75rem 2rem; font-size: 1.1rem; background: #f90;
-      border: none; border-radius: 6px; cursor: pointer; color: #111; font-weight: bold;
-    }
-    #launch-btn:hover { background: #ffb733; }
 
-    #canvas-container {
-      display: flex; align-items: center; justify-content: center;
-      width: 100%; height: 100%;
+    /* ── Header ──────────────────────────────────────────── */
+    #header {
+      text-align: center;
+      padding: 1.25rem 1rem 0.75rem;
+      border-bottom: 1px solid var(--border);
     }
+    #header h1 {
+      font-size: 2rem;
+      color: var(--accent);
+      letter-spacing: 2px;
+    }
+    #header p { color: var(--dim); font-size: 0.85rem; margin-top: 0.25rem; }
+
+    /* ── Game area ───────────────────────────────────────── */
+    #game-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1rem;
+      position: relative;
+    }
+
+    /* Loading card — overlays the canvas until game starts */
+    #loading-card {
+      position: absolute;
+      top: 1rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: 100%;
+      max-width: 800px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 2rem 1.5rem;
+      text-align: center;
+    }
+    #loading-card img {
+      max-width: 280px;
+      width: 100%;
+      margin-bottom: 1.25rem;
+    }
+    #status-text {
+      font-size: 1.05rem;
+      color: var(--accent);
+      min-height: 1.6rem;
+    }
+    #progress-bar {
+      width: 100%;
+      max-width: 420px;
+      height: 6px;
+      margin: 0.75rem auto 0.35rem;
+      accent-color: var(--accent);
+    }
+    #progress-label { font-size: 0.78rem; color: var(--dim); }
+
+    /* Canvas — always in the DOM with proper dimensions for SDL.
+       Visually obscured by the loading-card overlay until game starts. */
     #canvas {
-      display: block;
-      max-width: 100%; max-height: 100%;
-      /* let the CSS size be overridden by SDL; default to 4:3 */
-      aspect-ratio: 4/3;
-      width: min(100vw, calc(100vh * 4/3));
+      max-width: 100%;
+      border-radius: 6px;
+      outline: none;
     }
 
-    #status {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      padding: 4px 8px; background: rgba(0,0,0,0.5);
-      font-size: 0.75rem; color: #aaa; display: none;
+    /* Toolbar below canvas */
+    #toolbar {
+      display: none;
+      gap: 0.5rem;
+      padding: 0.5rem 0;
+      flex-wrap: wrap;
+      justify-content: center;
     }
 
-    #cheat-panel {
-      position: fixed; top: 8px; right: 8px;
-      background: rgba(0,0,0,0.75); border: 1px solid #444;
-      border-radius: 6px; padding: 8px 12px; font-size: 0.8rem;
-      display: none; flex-direction: column; gap: 6px; z-index: 50;
+    /* ── Generic button ──────────────────────────────────── */
+    .btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.35rem 0.8rem;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      transition: background 0.12s, border-color 0.12s;
     }
-    #cheat-panel h3 { color: #f90; margin-bottom: 4px; }
-    #cheat-panel label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-    #cheat-toggle-btn {
-      position: fixed; top: 8px; right: 8px;
-      background: rgba(0,0,0,0.6); border: 1px solid #555;
-      border-radius: 4px; color: #aaa; padding: 4px 8px;
-      font-size: 0.75rem; cursor: pointer; z-index: 51; display: none;
+    .btn:hover  { background: #2a2a2a; border-color: var(--accent); }
+    .btn.on     { background: #2a1a00; border-color: var(--accent); color: var(--accent); }
+    .btn.danger { border-color: #c04040; color: #e06060; }
+    .btn.danger:hover { background: #2a0d0d; }
+
+    /* ── Editor / cheat panel ────────────────────────────── */
+    #editor-panel {
+      width: 100%;
+      max-width: 800px;
+      margin: 0.5rem auto 1.5rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      display: none;
+    }
+    #editor-panel h2 {
+      color: var(--accent);
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .editor-section { margin-bottom: 1.1rem; }
+    .editor-section h3 {
+      font-size: 0.88rem;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.3rem;
+      margin-bottom: 0.6rem;
+    }
+    .editor-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin: 0.45rem 0;
+      flex-wrap: wrap;
+    }
+    .editor-row label {
+      min-width: 160px;
+      font-size: 0.88rem;
+      color: #ccc;
     }
   </style>
 </head>
 <body>
-  <!-- Launch overlay – required so browsers allow audio on first click -->
-  <div id="launch-overlay">
+
+  <div id="header">
     <h1>🏎️ Cro-Mag Rally</h1>
-    <p>Click <strong>Play</strong> to load the game. The first load may take a moment while the game data downloads.</p>
-    <button id="launch-btn">▶ Play</button>
+    <p>WebAssembly build — Click to start</p>
   </div>
 
-  <div id="canvas-container">
-    <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+  <div id="game-wrap">
+    <!-- Loading card overlays the canvas until the game is ready -->
+    <div id="loading-card">
+      <img src="screenshot.webp" alt="Cro-Mag Rally">
+      <div id="status-text">Click to load the game…</div>
+      <progress id="progress-bar" value="0" max="1" style="display:none;"></progress>
+      <div id="progress-label"></div>
+      <br>
+      <button class="btn" id="launch-btn" style="padding:0.6rem 2rem; font-size:1rem; background:var(--accent); color:#111; font-weight:bold; border:none; border-radius:6px; cursor:pointer;">
+        ▶ Play
+      </button>
+    </div>
+
+    <canvas id="canvas" width="640" height="480" tabindex="-1"
+            oncontextmenu="event.preventDefault()"></canvas>
   </div>
 
-  <div id="status"></div>
-
-  <button id="cheat-toggle-btn" title="Cheat / Editor Commands">🔧</button>
-  <div id="cheat-panel">
-    <h3>Editor Commands</h3>
-    <label>
-      <input type="checkbox" id="chk-fence-collision" checked>
-      Fence Collisions
-    </label>
+  <div id="toolbar">
+    <button class="btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+    <button class="btn" id="btn-mute" onclick="toggleMute()">🔊 Unmute</button>
+    <button class="btn" id="btn-fence" onclick="toggleFences()">✓ Fences On</button>
+    <button class="btn" id="btn-editor" onclick="toggleEditorPanel()">🔧 Editor</button>
   </div>
 
-  <!-- Emscripten-generated loader (injected by Emscripten into {{{ SCRIPT }}}) -->
-  {{{ SCRIPT }}}
+  <div id="editor-panel">
+    <h2>Level Editor Integration</h2>
+    <div class="editor-section">
+      <h3>Fence Collisions</h3>
+      <div class="editor-row">
+        <label>Toggle fence collisions:</label>
+        <button class="btn on" id="btn-fence-editor" onclick="toggleFences()">✓ Enabled</button>
+      </div>
+    </div>
+    <div class="editor-section">
+      <h3>Custom Terrain Upload</h3>
+      <div class="editor-row">
+        <label>Upload .ter file:</label>
+        <input type="file" id="ter-upload" accept=".ter" onchange="uploadTerrainFile()">
+      </div>
+    </div>
+  </div>
 
   <script>
-    // ----------------------------------------------------------------
-    // Emscripten Module configuration
-    // ----------------------------------------------------------------
+    // ── State ─────────────────────────────────────────────
+    var _fenceEnabled = true;
+    var _muted = false;
+    var _launched = false;
+
+    // ── Module config (Emscripten) ────────────────────────
     var Module = {
       canvas: document.getElementById('canvas'),
 
-      // Print to browser console
-      print: function(text) { console.log('[game]', text); },
-      printErr: function(text) { console.error('[game]', text); },
+      print:    function(t) { console.log('[CroMag]', t); },
+      printErr: function(t) { console.warn('[CroMag stderr]', t); },
 
-      // Show progress while loading .data file
-      setStatus: function(text) {
-        var el = document.getElementById('status');
-        if (!text) { el.style.display = 'none'; return; }
-        el.textContent = text;
-        el.style.display = 'block';
-      },
+      onAbort: function(what) { console.error('[CroMag] ABORT:', what); },
 
       onRuntimeInitialized: function() {
-        // Hide status bar and show cheat toggle once game is ready
-        document.getElementById('status').style.display = 'none';
-        document.getElementById('cheat-toggle-btn').style.display = 'block';
+        console.log('[CroMag] Runtime ready');
+        // Hide loading card, show toolbar
+        var card = document.getElementById('loading-card');
+        if (card) card.style.display = 'none';
+        document.getElementById('toolbar').style.display = 'flex';
 
-        // Expose cheat helpers to page JS
+        // Expose cheat helpers
         window.GameCheat = {
           setFenceCollision: Module.cwrap('WASM_SetFenceCollision', null, ['number']),
           getFenceCollision: Module.cwrap('WASM_GetFenceCollision', 'number', []),
         };
 
-        // Sync checkbox initial state
-        var chk = document.getElementById('chk-fence-collision');
-        chk.checked = window.GameCheat.getFenceCollision() !== 0;
+        // Sync fence state
+        _fenceEnabled = window.GameCheat.getFenceCollision() !== 0;
+        updateFenceButtons();
       },
 
-      // Suppress the default fullscreen / pointer-lock prompts
+      setStatus: function(text) {
+        if (!text) {
+          document.getElementById('status-text').textContent = '';
+          document.getElementById('progress-bar').style.display = 'none';
+          document.getElementById('progress-label').textContent = '';
+          return;
+        }
+        // Parse Emscripten status messages like "Downloading data... (12345/67890)"
+        var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+        var bar = document.getElementById('progress-bar');
+        var label = document.getElementById('progress-label');
+        var statusEl = document.getElementById('status-text');
+        if (m) {
+          statusEl.textContent = m[1].trim();
+          bar.style.display = '';
+          bar.value = parseInt(m[2], 10);
+          bar.max = parseInt(m[4], 10);
+          var pct = ((bar.value / bar.max) * 100).toFixed(0);
+          label.textContent = pct + '% — ' + (bar.value / 1048576).toFixed(1) + ' / ' + (bar.max / 1048576).toFixed(1) + ' MB';
+        } else {
+          statusEl.textContent = text;
+          bar.style.display = 'none';
+          label.textContent = '';
+        }
+      },
+
+      monitorRunDependencies: function(left) {
+        var bar = document.getElementById('progress-bar');
+        var label = document.getElementById('progress-label');
+        if (left === 0) {
+          bar.style.display = 'none';
+          label.textContent = '';
+        } else {
+          bar.style.display = '';
+          bar.value = Math.max(0, 1 - (left * 0.02));
+        }
+      },
+
       doNotCaptureKeyboard: false,
     };
 
-    // ----------------------------------------------------------------
-    // Launch button – defers main() until user gesture for audio
-    // ----------------------------------------------------------------
+    // ── Launch button ─────────────────────────────────────
     document.getElementById('launch-btn').addEventListener('click', function() {
-      document.getElementById('launch-overlay').style.display = 'none';
+      if (_launched) return;
+      _launched = true;
+      this.style.display = 'none';
+      document.getElementById('status-text').textContent = 'Loading…';
+      document.getElementById('progress-bar').style.display = '';
     });
 
-    // ----------------------------------------------------------------
-    // Cheat panel toggle
-    // ----------------------------------------------------------------
-    document.getElementById('cheat-toggle-btn').addEventListener('click', function() {
-      var panel = document.getElementById('cheat-panel');
-      panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
-    });
+    // ── UI helpers ────────────────────────────────────────
 
-    // Fence collision toggle
-    document.getElementById('chk-fence-collision').addEventListener('change', function() {
-      if (window.GameCheat) {
-        window.GameCheat.setFenceCollision(this.checked ? 1 : 0);
+    function toggleFences() {
+      _fenceEnabled = !_fenceEnabled;
+      try {
+        if (window.GameCheat) {
+          window.GameCheat.setFenceCollision(_fenceEnabled ? 1 : 0);
+        }
+      } catch (e) {
+        console.warn('Module not ready yet:', e);
       }
-    });
+      updateFenceButtons();
+    }
 
-    // ----------------------------------------------------------------
-    // Utility: allow external JS to load a custom level .ter file.
-    //
-    // Usage (from a level editor or the browser console):
-    //   loadLevelOverride(arrayBuffer, ':Terrain:MyLevel.ter');
-    //
-    // The file is written into the Emscripten virtual FS and the game
-    // reads it on the *next* restart / page reload (it cannot hot-swap
-    // a running level).  Pass the path as the second argument and set
-    // the URL param  ?levelOverride=:Terrain:MyLevel.ter  before
-    // reloading.
-    // ----------------------------------------------------------------
+    function updateFenceButtons() {
+      var btn = document.getElementById('btn-fence');
+      var btnEditor = document.getElementById('btn-fence-editor');
+      if (btn) {
+        btn.textContent = _fenceEnabled ? '✓ Fences On' : '✗ Fences Off';
+        btn.className = 'btn' + (_fenceEnabled ? ' on' : ' danger');
+      }
+      if (btnEditor) {
+        btnEditor.textContent = _fenceEnabled ? '✓ Enabled' : '✗ Disabled';
+        btnEditor.className = 'btn' + (_fenceEnabled ? ' on' : ' danger');
+      }
+    }
+
+    function toggleFullscreen() {
+      var c = document.getElementById('canvas');
+      if (!c) return;
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        c.requestFullscreen().catch(function(e) { console.warn(e); });
+      }
+    }
+
+    function toggleMute() {
+      _muted = !_muted;
+      var btn = document.getElementById('btn-mute');
+      try {
+        var ctx = Module.SDL3 && Module.SDL3.audioContext;
+        if (!ctx && Module.SDL2) ctx = Module.SDL2.audioContext;
+        if (ctx) {
+          if (_muted) ctx.suspend(); else ctx.resume();
+        }
+      } catch (e) { /* ignore */ }
+      if (btn) btn.textContent = _muted ? '🔇 Muted' : '🔊 Unmute';
+    }
+
+    function toggleEditorPanel() {
+      var panel = document.getElementById('editor-panel');
+      panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function uploadTerrainFile() {
+      var input = document.getElementById('ter-upload');
+      if (!input || !input.files.length) return;
+      var file = input.files[0];
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var data = new Uint8Array(e.target.result);
+        var vfsPath = '/Data/Terrain/' + file.name;
+        try {
+          Module.FS.writeFile(vfsPath, data);
+          console.log('[CroMag] Uploaded terrain: ' + vfsPath + ' (' + data.length + ' bytes)');
+        } catch (err) {
+          console.error('Upload failed:', err);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // ── Level override utility ────────────────────────────
     window.loadLevelOverride = function(arrayBuffer, virtualPath) {
       virtualPath = virtualPath || ':Terrain:override.ter';
       var uint8 = new Uint8Array(arrayBuffer);
-      // Map the Mac-style colon path to a virtual FS path.
-      // ':Terrain:foo.ter' → '/Data/Terrain/foo.ter' inside the WASM virtual FS.
       var vfsPath = '/Data' + virtualPath.replace(/:/g, '/');
-      try {
-        FS.unlink(vfsPath);
-      } catch(e) {}
+      try { FS.unlink(vfsPath); } catch(e) {}
       FS.writeFile(vfsPath, uint8);
-      console.log('[game] Level override written to', vfsPath,
+      console.log('[CroMag] Level override written to', vfsPath,
                   '– reload with ?levelOverride=' + encodeURIComponent(virtualPath));
     };
   </script>
+
+  {{{ SCRIPT }}}
 </body>
 </html>
