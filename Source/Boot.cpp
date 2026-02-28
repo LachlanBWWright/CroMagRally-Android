@@ -228,6 +228,7 @@ retryVideo:
 	}
 }
 
+#ifndef __EMSCRIPTEN__
 static void Shutdown()
 {
 	// Always restore the user's mouse acceleration before exiting.
@@ -243,6 +244,7 @@ static void Shutdown()
 
 	SDL_Quit();
 }
+#endif
 
 int main(int argc, char** argv)
 {
