@@ -19,7 +19,8 @@
 
 #ifdef __EMSCRIPTEN__
 // glColorMaterial is a fixed-function pipeline function not available in WebGL/GLES2.
-// LEGACY_GL_EMULATION does not provide it. Stub it as a no-op.
+// LEGACY_GL_EMULATION does not provide it. This intentionally shadows the GL symbol
+// name to satisfy the linker when the game code calls glColorMaterial.
 void glColorMaterial(GLenum face, GLenum mode) { (void)face; (void)mode; }
 #endif
 
