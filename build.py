@@ -469,8 +469,10 @@ class EmscriptenProject(Project):
         return f"{game_name}-{game_ver}-wasm.zip"
 
     def prepare_dependencies(self):
-        # Emscripten provides SDL3 itself; no extra download needed.
-        pass
+        sdl_source_dir = f"{libs_dir}/SDL3-{sdl_ver}"
+        if not os.path.isdir(sdl_source_dir):
+            sdl_zip_path = get_package(f"https://libsdl.org/release/SDL3-{sdl_ver}.tar.gz")
+            shutil.unpack_archive(sdl_zip_path, libs_dir)
 
     def configure(self):
         fatlog(f"Configuring {self.dir_name} (Emscripten)")

@@ -40,4 +40,4 @@ jobs:
 
       - name: Build (WebAssembly)
         if: matrix.platform.wasm == true
-        run: python3 build.py --configure --build
+        run: python3 build.py --dependencies --configure --build
