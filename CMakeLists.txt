@@ -381,6 +381,10 @@ if(EMSCRIPTEN)
 		# immediate-mode (glBegin/glEnd, glMatrixMode, glFog*, etc.) to WebGL.
 		-sLEGACY_GL_EMULATION=1
 		-sGL_UNSAFE_OPTS=0
+		# Asyncify: allows blocking C loops (game main loop, SDL_Delay, etc.)
+		# to yield to the browser event loop so frames can be composited.
+		-sASYNCIFY=1
+		-sASYNCIFY_STACK_SIZE=65536
 		# Memory: start at 256 MB, allow growth
 		-sINITIAL_MEMORY=268435456
 		-sALLOW_MEMORY_GROWTH=1

@@ -1369,10 +1369,21 @@ int	i;
 	gStateStack_Blend[i] 	= glIsEnabled(GL_BLEND);
 	gStateStack_ProjectionType[i] = gMyState_ProjectionType;
 
+#ifdef __EMSCRIPTEN__
+	// GL_CURRENT_COLOR is not available in WebGL; track it manually.
+	gStateStack_Color[i][0] = 1.0f;
+	gStateStack_Color[i][1] = 1.0f;
+	gStateStack_Color[i][2] = 1.0f;
+	gStateStack_Color[i][3] = 1.0f;
+	// GL_BLEND_SRC / GL_BLEND_DST use different enum names in WebGL;
+	// use the WebGL-compatible equivalents.
+	glGetIntegerv(GL_BLEND_SRC_ALPHA, &gStateStack_BlendSrc[i]);
+	glGetIntegerv(GL_BLEND_DST_ALPHA, &gStateStack_BlendDst[i]);
+#else
 	glGetFloatv(GL_CURRENT_COLOR, &gStateStack_Color[i][0]);
-
 	glGetIntegerv(GL_BLEND_SRC, &gStateStack_BlendSrc[i]);
 	glGetIntegerv(GL_BLEND_DST, &gStateStack_BlendDst[i]);
+#endif
 	glGetBooleanv(GL_DEPTH_WRITEMASK, &gStateStack_DepthMask[i]);
 }
 
