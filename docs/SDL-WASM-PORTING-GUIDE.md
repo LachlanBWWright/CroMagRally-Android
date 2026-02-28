@@ -566,4 +566,4 @@ SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
 
 ---
 
-*This guide was created as part of the OttoMatic WebAssembly port. For the reference implementation, see the [OttoMatic-Android repository](https://github.com/LachlanBWWright/OttoMatic-Android).*
+*This guide was originally created as part of the OttoMatic WebAssembly port and adapted for Cro-Mag Rally. For the reference implementation, see the [OttoMatic-Android repository](https://github.com/LachlanBWWright/OttoMatic-Android).*
