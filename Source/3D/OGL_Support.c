@@ -1444,7 +1444,9 @@ int		i;
 void OGL_EnableLighting(void)
 {
 	gMyState_Lighting = true;
+#ifndef __EMSCRIPTEN__
 	glEnable(GL_LIGHTING);
+#endif
 }
 
 /******************* OGL DISABLE LIGHTING ****************************/
@@ -1452,7 +1454,9 @@ void OGL_EnableLighting(void)
 void OGL_DisableLighting(void)
 {
 	gMyState_Lighting = false;
+#ifndef __EMSCRIPTEN__
 	glDisable(GL_LIGHTING);
+#endif
 }
 
 
